@@ -1,0 +1,33 @@
+{
+	"name": "zotero-streamer",
+	"version": "0.1.0",
+	"description": "A streaming server that provides push notifications for Zotero changes",
+	"author": "Dan Stillman <dstillman@zotero.org>",
+	"scripts": {
+		"start": "iojs index.js",
+		"test": "NODE_ENV=test ./node_modules/mocha/bin/mocha"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/zotero/streamer"
+	},
+	"dependencies": {
+		"aws-sdk": "^2.1.8",
+		"bluebird": "^2.9.4",
+		"config": "^1.1.0",
+		"findhit-proxywrap": "0.3.8",
+		"randomstring": "^1.0.3",
+		"request": "^2.51.0",
+		"strftime": "^0.8.2"
+	},
+	"devDependencies": {
+		"mocha": "^2.1.0",
+		"mockery": "^1.4.0",
+		"chai": "^1.10.0",
+		"sinon": "^1.12.2"
+	},
+	"engines": {
+		"iojs": ">=1.0.0"
+	},
+	"license": "AGPL-3.0"
+}
