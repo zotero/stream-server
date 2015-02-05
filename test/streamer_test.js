@@ -41,10 +41,10 @@ var EventStream = require('./support/event_stream');
 var assertionCount = require('./support/assertion_count');
 var assert = assertionCount.assert;
 var expect = assertionCount.expect;
-var utils = require('./support/test_utils');
-var baseURL = utils.baseURL;
-var onEvent = utils.onEvent;
-var makeAPIKey = utils.makeAPIKey;
+var testUtils = require('./support/test_utils');
+var baseURL = testUtils.baseURL;
+var onEvent = testUtils.onEvent;
+var makeAPIKey = testUtils.makeAPIKey;
 
 
 // Start server
@@ -586,7 +586,7 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield utils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
+					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
 					assert.equal(response.statusCode, 201);
 					
 					// Delete subscriptions
@@ -648,7 +648,7 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield utils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
+					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
 					assert.equal(response.statusCode, 201);
 					
 					zoteroAPI.getAllKeyTopics.restore();
@@ -715,7 +715,7 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield utils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
+					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
 					assert.equal(response.statusCode, 201);
 					
 					zoteroAPI.getAllKeyTopics.restore();
@@ -783,9 +783,9 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield utils.addSubscriptions(connectionID, apiKey1);
+					var response = yield testUtils.addSubscriptions(connectionID, apiKey1);
 					assert.equal(response.statusCode, 201);
-					var response = yield utils.addSubscriptions(connectionID, apiKey2);
+					var response = yield testUtils.addSubscriptions(connectionID, apiKey2);
 					assert.equal(response.statusCode, 201);
 					
 					zoteroAPI.getAllKeyTopics.restore();
@@ -832,7 +832,7 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield utils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
+					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
 					assert.equal(response.statusCode, 201);
 					
 					zoteroAPI.getAllKeyTopics.restore();
