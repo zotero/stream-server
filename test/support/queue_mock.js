@@ -24,7 +24,7 @@
 
 var Promise = require('bluebird');
 var randomstring = require('randomstring');
-var utils = require('../../utils');
+var log = require('../../log');
 
 module.exports = {
 	_messages: {},

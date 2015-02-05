@@ -1,4 +1,4 @@
 {
-	"debug": true,
+	"logLevel": "trace",
 	"httpPort": 18050
 }

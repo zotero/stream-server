@@ -23,13 +23,12 @@
 "use strict";
 
 var config = require('config');
-var strftime = require('strftime');
+var log = require('./log');
 
 module.exports = function () {
 	//
 	// Private functions
 	//
-	
 	function HTTPError (code, message) {
 		this.code = code;
 		this.message = message || "";
@@ -41,42 +40,14 @@ module.exports = function () {
 	// Public methods
 	//
 	return {
-		log: function (msg, connectionOrRequest) {
-			var date = "[" + strftime("%d/%b/%Y:%H:%M:%S %z") + "] ";
-			
-			if (connectionOrRequest) {
-				// Request
-				if (connectionOrRequest.socket) {
-					var addr = this.getIPAddressFromRequest(connectionOrRequest);
-				}
-				// Connection (address stored in connections.registerConnection())
-				else if (connectionOrRequest.remoteAddress) {
-					var addr = connectionOrRequest.remoteAddress;
-				}
-			}
-			
-			if (addr) {
-				console.log(date + "[" + addr + "] " + msg);
-			}
-			else {
-				console.log(date + msg);
-			}
-		},
-		
-		debug: function (msg, connectionOrRequest) {
-			if (config.get('debug')) {
-				this.log(msg, connectionOrRequest);
-			}
-		},
-		
 		end: function (req, res, code, msg) {
 			if (!code) {
-				utils.log("WARNING: Response code not provided to utils.end()")
+				log.warn("Response code not provided to utils.end()")
 				code = 500;
 			}
 			
 			var logMessage = (msg instanceof Error) ? msg.stack : msg;
-			this.log('"' + req.method + " " + req.url + '" ' + code + " - " + logMessage, req);
+			log.info('"' + req.method + " " + req.url + '" ' + code + " - " + logMessage, req);
 			
 			res.writeHead(code, { "Content-Type": 'text/plain' });
 			
@@ -103,7 +74,7 @@ module.exports = function () {
 				return addr;
 			}
 			catch (e) {
-				utils.log(e);
+				log.error(e);
 				return "";
 			}
 		},

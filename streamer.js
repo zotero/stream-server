@@ -24,17 +24,20 @@
 
 var config = require('config');
 var Promise = require("bluebird");
-if (config.get('debug')) {
+if (config.get('longStackTraces')) {
 	Promise.longStackTraces();
 }
+
 var fs = require('fs');
 var url = require('url');
 var process = require('process');
 var domain = require('domain');
 var path = require('path');
+var util = require('util');
 
 var utils = require('./utils');
 var HTTPError = utils.HTTPError;
+var log = require('./log');
 var queue = require('./queue');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
@@ -53,12 +56,12 @@ module.exports = function (onInit) {
 		var receiptHandle = message.ReceiptHandle;
 		var json = JSON.parse(message.Body);
 		if (!json) {
-			utils.log("Error parsing outer message: " + message.Body);
+			log.error("Error parsing outer message: " + message.Body);
 			return;
 		}
 		var data = JSON.parse(json.Message);
 		if (!data) {
-			utils.log("Error parsing inner message: " + json.Message);
+			log.error("Error parsing inner message: " + json.Message);
 		}
 		
 		var apiKey = data.apiKey;
@@ -96,7 +99,7 @@ module.exports = function (onInit) {
 			// See "server.on('ipAddress')" above
 			if (ipAddress) {
 				if (req.socket.clientAddress == ipAddress) {
-					utils.log("Already had correct address in socket");
+					log.warn("Already had correct address in socket");
 				}
 				req.socket.clientAddress = ipAddress;
 			}
@@ -136,17 +139,17 @@ module.exports = function (onInit) {
 				}
 				
 				req.on('close', function () {
-					utils.log("Closing connection");
+					log.info("Closing connection");
 					var closed = connections.deregisterConnectionByRequest(req);
 					if (!closed) {
-						utils.log("Connection not found", req);
+						log.warn("Connection not found", req);
 					}
 				});
 				res.on('close', function () {
-					utils.log("Response closed", req);
+					log.info("Response closed", req);
 				});
 				res.on('finish', function () {
-					utils.log("Response finished", req);
+					log.info("Response finished", req);
 				});
 				
 				return startStream(req, res, keyTopics);
@@ -165,7 +168,7 @@ module.exports = function (onInit) {
 	// Start stream for new connection
 	//
 	var startStream = Promise.coroutine(function* (req, res, keyTopics) {
-		utils.log("Starting event stream", req);
+		log.info("Starting event stream", req);
 		
 		if (keyTopics) {
 			var singleKeyRequest = true;
@@ -249,7 +252,7 @@ module.exports = function (onInit) {
 				if (!body) {
 					throw new HTTPError(400, "JSON body not provided");
 				}
-				utils.debug(req.method + " data: " + body, req);
+				log.debug(req.method + " data: " + body, req);
 				try {
 					var data = JSON.parse(body);
 				}
@@ -340,7 +343,7 @@ module.exports = function (onInit) {
 						if (!failed[apiKey]) {
 							failed[apiKey] = [];
 						}
-						utils.log(topic + " not valid for key " + apiKey, req);
+						log.warn(topic + " not valid for key " + apiKey, req);
 						failed[apiKey].push({
 							topic: topic,
 							error: "Topic not valid for API key"
@@ -416,7 +419,7 @@ module.exports = function (onInit) {
 			connection, data.apiKey, data.topic
 		);
 		if (numRemoved) {
-			utils.log("Deleted " + numRemoved + " "
+			log.info("Deleted " + numRemoved + " "
 				+ utils.plural("subscription", numRemoved), req);
 		}
 		else {
@@ -445,11 +448,11 @@ module.exports = function (onInit) {
 			if (server) {
 				try {
 					server.close(function () {
-						utils.log("All connections closed");
+						log.info("All connections closed");
 					});
 				}
 				catch (e) {
-					utils.log(e);
+					log.error(e);
 				}
 			}
 			
@@ -457,7 +460,7 @@ module.exports = function (onInit) {
 				connections.deregisterAllConnections();
 			}
 			catch (e) {
-				utils.log(e);
+				log.error(e);
 			}
 			
 			if (statusIntervalID) {
@@ -469,13 +472,13 @@ module.exports = function (onInit) {
 					yield queue.terminate(queueData);
 				}
 				catch (e) {
-					utils.log(e);
+					log.error(e);
 				}
 			}
 			
-			utils.log("Waiting 2 seconds before exiting");
+			log.info("Waiting 2 seconds before exiting");
 			yield Promise.delay(2000)
-			utils.log("Exiting");
+			log.info("Exiting");
 			process.exit(err ? 1 : 0);
 		})();
 	}
@@ -489,31 +492,31 @@ module.exports = function (onInit) {
 	//
 	//
 	return Promise.coroutine(function* () {
-		utils.log("Starting up [pid: " + process.pid + "]");
+		log.info("Starting up [pid: " + process.pid + "]");
 		
 		queueData = yield queue.create();
 		var queueURL = queueData.queueURL;
 		
 		if (process.env.NODE_ENV != 'test') {
 			process.on('SIGTERM', function () {
-				utils.log("Received SIGTERM -- shutting down")
+				log.warn("Received SIGTERM -- shutting down")
 				shutdown();
 			});
 			
 			process.on('SIGINT', function () {
-				utils.log("Received SIGINT -- shutting down")
+				log.warn("Received SIGINT -- shutting down")
 				shutdown();
 			});
 			
 			process.on('uncaughtException', function (e) {
-				utils.log("Uncaught exception -- shutting down");
-				utils.log(e.stack);
+				log.error("Uncaught exception -- shutting down");
+				log.error(e.stack);
 				shutdown();
 			});
 			
 			process.on("unhandledRejection", function (reason, promise) {
-				utils.log("Unhandled Promise rejection -- shutting down");
-				utils.log(reason);
+				log.error("Unhandled Promise rejection -- shutting down");
+				log.error(reason);
 				shutdown();
 			});
 		}
@@ -565,18 +568,18 @@ module.exports = function (onInit) {
 		}
 		
 		server.on('error', function (e) {
-			utils.log("Server threw error");
-			utils.log(e);
+			log.error("Server threw error");
+			log.error(e);
 			shutdown(e);
 		});
 		
 		yield Promise.promisify(server.listen, server)(config.get('httpPort'), '0.0.0.0');
 		
-		utils.log("Listening on port " + config.get('httpPort'));
+		log.info("Listening on port " + config.get('httpPort'));
 		
 		// Set status timer
 		statusIntervalID = setInterval(function () {
-			utils.log(connections.status());
+			log.info(connections.status());
 		}, config.get('statusInterval') * 1000);
 		
 		setTimeout(function () {
@@ -590,27 +593,30 @@ module.exports = function (onInit) {
 			if (stopping) {
 				break;
 			}
-			utils.log("Getting messages from queue");
+			log.info("Getting messages from queue");
 			let messages = yield queue.receiveMessages(queueURL);
 			if (messages) {
-				utils.log("Received " + messages.length + " "
+				log.info("Received " + messages.length + " "
 					+ utils.plural('message', messages.length) + " from queue");
 				for (let i = 0; i < messages.length; i++) {
 					let message = messages[i];
 					handleNotification(message);
 				}
 				let results = yield queue.deleteMessages(queueURL, messages);
-				utils.log(
+				log.info(
 					"Deleted " + results.successful + " " + utils.plural('message', results.successful)
 					+ (results.failed ? " (" + results.failed + " failed)" : "")
 					+ " from queue"
 				);
 			}
+			if (log.showing('trace')) {
+				log.trace(util.inspect(process.memoryUsage()));
+			}
 		}
 	})()
 	.catch(function (e) {
-		utils.log("Caught error");
-		utils.log(e.stack);
+		log.error("Caught error");
+		console.log(e.stack);
 		shutdown(e);
 	});
 };

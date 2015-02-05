@@ -24,17 +24,16 @@
 
 var config = require('config');
 var Promise = require("bluebird");
-var http = Promise.promisifyAll(require('http'));
-var AWS = require('aws-sdk');
 var randomstring = require('randomstring');
 
-var utils = require('./utils');
-
+var AWS = require('aws-sdk');
 AWS.config.update({ region: config.get('awsRegion') });
 var SNS = new AWS.SNS({ apiVersion: '2010-03-31' });
 var SQS = new AWS.SQS({ apiVersion: '2012-11-05' });
 Promise.promisifyAll(Object.getPrototypeOf(SNS));
 Promise.promisifyAll(Object.getPrototypeOf(SQS));
+
+var log = require('./log');
 
 /**
  * Create SQS queue and subscribe it to an SNS topic
@@ -44,7 +43,7 @@ exports.create = Promise.coroutine(function* () {
 		throw new Error("config.snsTopic is not set");
 	}
 	
-	utils.log("Creating SQS queue and SNS subscription");
+	log.info("Creating SQS queue and SNS subscription");
 	
 	var queueName = config.get('sqsQueuePrefix') + config.get('hostname') + "-" + randomstring.generate(4);
 	// Determine queue ARN from the SNS topic. This assumes that the SQS queue and SNS topic
@@ -77,14 +76,14 @@ exports.create = Promise.coroutine(function* () {
 		}
 	})).QueueUrl;
 	
-	utils.log("Created queue " + queueName);
+	log.info("Created queue " + queueName);
 	
 	var queueARN = (yield SQS.getQueueAttributesAsync({
 		QueueUrl: queueURL,
 		AttributeNames: ['QueueArn']
 	})).Attributes.QueueArn;
 	
-	utils.log("Queue ARN: " + queueARN);
+	log.debug("Queue ARN: " + queueARN);
 	
 	var subscriptionARN = (yield SNS.subscribeAsync({
 		TopicArn: config.get('snsTopic'),
@@ -92,7 +91,7 @@ exports.create = Promise.coroutine(function* () {
 		Endpoint: queueARN
 	})).SubscriptionArn;
 	
-	utils.log("Subscription ARN: " + subscriptionARN);
+	log.debug("Subscription ARN: " + subscriptionARN);
 	
 	return {
 		queueURL: queueURL,
@@ -126,7 +125,7 @@ exports.deleteMessages = Promise.coroutine(function* (queueURL, messages) {
 		if (result.Failed.length) {
 			numFailed += result.Failed.length;
 			result.Failed.forEach(function (e) {
-				utils.log(JSON.stringify(e));
+				log.warn(JSON.stringify(e));
 			})
 		}
 	}
@@ -138,27 +137,27 @@ exports.deleteMessages = Promise.coroutine(function* (queueURL, messages) {
 });
 
 exports.terminate = Promise.coroutine(function* (queueData) {
-	utils.log("Deleting subscription and queue");
+	log.info("Deleting subscription and queue");
 	
 	return Promise.all([
 		SNS.unsubscribeAsync({
 			SubscriptionArn: queueData.subscriptionARN
 		})
 		.then(function () {
-			utils.log("Deleted subscription " + queueData.subscriptionARN);
+			log.info("Deleted subscription " + queueData.subscriptionARN);
 		})
 		.catch(function (e) {
-			utils.log("Error deleting subscription: " + e.stack);
+			log.error("Error deleting subscription: " + e.stack);
 		}),
 		
 		SQS.deleteQueueAsync({
 			QueueUrl: queueData.queueURL
 		})
 		.then(function () {
-			utils.log("Deleted queue " + queueData.queueURL);
+			log.info("Deleted queue " + queueData.queueURL);
 		})
 		.catch(function (e) {
-			utils.log("Error deleting queue: " + e.stack);
+			log.error("Error deleting queue: " + e.stack);
 		})
 	]);
 });

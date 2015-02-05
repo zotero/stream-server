@@ -25,6 +25,7 @@
 var config = require('config');
 var randomstring = require('randomstring');
 var utils = require('./utils');
+var log = require('./log');
 
 module.exports = function () {
 	//
@@ -175,12 +176,12 @@ module.exports = function () {
 			for (let i = 0; i < topicSubscriptions[topic].length; i++) {
 				var sub = topicSubscriptions[topic][i];
 				if (sub.connection == connection && sub.apiKey == apiKey) {
-					utils.log("Subscription for " + topic + " already exists");
+					log.info("Subscription for " + topic + " already exists");
 					return;
 				}
 			}
 			
-			utils.debug("Adding subscription for " + topic);
+			log.info("Adding subscription for " + topic, connection);
 			
 			var subscription = {
 				connection: connection,
@@ -206,7 +207,7 @@ module.exports = function () {
 			var apiKey = subscription.apiKey;
 			var topic = subscription.topic;
 			
-			utils.log("Removing subscription for " + topic);
+			log.info("Removing subscription for " + topic);
 			var removed = false;
 			
 			this.disableAccessTracking(connection, apiKey);
@@ -250,7 +251,7 @@ module.exports = function () {
 		 */
 		handleTopicAdded: function (apiKey, topic) {
 			var conns = this.getAccessTrackingConnections(apiKey);
-			utils.log("Sending topicAdded to " + conns.length + " "
+			log.info("Sending topicAdded to " + conns.length + " "
 				+ utils.plural("client", conns.length));
 			for (let i = 0; i < conns.length; i++) {
 				let conn = conns[i];
@@ -295,7 +296,7 @@ module.exports = function () {
 			var numConns = this.countUniqueConnectionsInSubscriptions(subscriptions);
 			if (!numConns) return;
 			
-			utils.log("Sending topicRemoved for "
+			log.info("Sending topicRemoved for "
 				+ subscriptions.length + " " + utils.plural("subscription", subscriptions.length)
 				+ " to " + numConns + " " + utils.plural("connection", numConns));
 			
@@ -340,7 +341,7 @@ module.exports = function () {
 		},
 		
 		closeConnection: function (conn) {
-			utils.log("Closing connection", conn);
+			log.info("Closing connection", conn);
 			clearInterval(conn.keepaliveID);
 			conn.response.end()
 			numConnections--;
@@ -357,7 +358,7 @@ module.exports = function () {
 		},
 		
 		deregisterAllConnections: function () {
-			utils.log("Closing all connections");
+			log.info("Closing all connections");
 			Object.keys(connections).forEach(function (id) {
 				this.deregisterConnection(connections[id]);
 				
@@ -377,9 +378,7 @@ module.exports = function () {
 			// Add "data:" before each newline in data
 			msg += "data: " + data.trim().replace(/\n/g, "\ndata: ") + "\n\n";
 			
-			if (config.get('debug')) {
-				utils.debug(msg.trim(), connection);
-			}
+			log.trace(msg.trim(), connection);
 			connection.response.write(msg);
 		},
 		
@@ -395,7 +394,7 @@ module.exports = function () {
 			
 			var logEventName = (event + " event") || "data";
 			var numSubs = topicSubscriptions[topic].length;
-			utils.log("Sending " + logEventName + " for topic " + topic + " to "
+			log.info("Sending " + logEventName + " for topic " + topic + " to "
 				+ numSubs + " " + utils.plural("client", numSubs));
 			
 			for (let i = 0; i < topicSubscriptions[topic].length; i++) {
@@ -424,7 +423,7 @@ module.exports = function () {
 				return;
 			}
 			
-			utils.log("Sending " + logEventName + " to "
+			log.info("Sending " + logEventName + " to "
 				+ subs.length + " " + utils.plural("client", subs.length));
 			
 			for (let i = 0; i < subs.length; i++) {
@@ -439,9 +438,7 @@ module.exports = function () {
 		
 		sendRetry: function (connection, retry) {
 			var msg = "retry: " + retry + "\n\n";
-			if (config.get('debug')) {
-				utils.debug(msg.trim(), connection);
-			}
+			log.trace(msg.trim(), connection, 5);
 			connection.response.write(msg);
 		},
 		
