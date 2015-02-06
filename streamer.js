@@ -30,7 +30,6 @@ if (config.get('longStackTraces')) {
 
 var fs = require('fs');
 var url = require('url');
-var process = require('process');
 var domain = require('domain');
 var path = require('path');
 var util = require('util');
