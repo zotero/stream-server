@@ -600,6 +600,9 @@ module.exports = function (onInit) {
 		// Set status timer
 		statusIntervalID = setInterval(function () {
 			log.info(connections.status());
+			if (log.showing('trace')) {
+				log.info(require('util').inspect(process.memoryUsage()));
+			}
 		}, config.get('statusInterval') * 1000);
 		
 		setTimeout(function () {
@@ -628,9 +631,6 @@ module.exports = function (onInit) {
 					+ (results.failed ? " (" + results.failed + " failed)" : "")
 					+ " from queue"
 				);
-			}
-			if (log.showing('trace')) {
-				log.trace(util.inspect(process.memoryUsage()));
 			}
 		}
 	})()
