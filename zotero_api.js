@@ -27,6 +27,7 @@ var Promise = require("bluebird");
 var request = Promise.promisify(require('request'));
 
 var utils = require('./utils');
+var log = require('./log');
 
 //
 // Zotero API interaction
@@ -97,8 +98,37 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 /**
  * Check to make sure the given topic is in the list of available topics
  */
-exports.checkTopicAccess = Promise.coroutine(function* (availableTopics, topic) {
-	return availableTopics.indexOf(topic) != -1;
+exports.checkPublicTopicAccess = Promise.coroutine(function* (topic) {
+	try {
+		// TODO: Use HEAD request once main API supports it
+		let url = config.get('apiURL') + topic.substr(1);
+		var options = {
+			url: url,
+			headers: getAPIRequestHeaders()
+		}
+		return request(options).spread(function (response, body) {
+			if (response.statusCode == 200) {
+				return true;
+			}
+			if (response.statusCode == 403 || response.statusCode == 404) {
+				return false;
+			}
+			
+			log.error("Got " + response.statusCode + " from API for " + url);
+			
+			// This shouldn't happen
+			if (utils.isClientError(response.statusCode)) {
+				response.statusCode = 500;
+			}
+			throw new utils.HTTPError(response.statusCode, response.body);
+		});
+	}
+	catch (e) {
+		if (e instanceof utils.HTTPError) {
+			throw e;
+		}
+		throw new Error("Error getting key permissions: " + e);
+	}
 });
 
 

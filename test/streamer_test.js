@@ -428,8 +428,81 @@ describe("Streamer Tests:", function () {
 			})
 		});
 		
+
+		it("should add provided public subscriptions", function (done) {
+			expect(7);
+			
+			var eventStream = new EventStream;
+			eventStream.on('data', function (data) {
+				onEvent(data, 'connected', function (fields) {
+					let connectionID = fields.data.connectionID;
+					
+					var topics = ['/groups/123456', '/groups/234567'];
+					var ignoredTopics = ['/groups/345678'];
+					
+					// Listen for update notifications
+					var topicUpdatedCalled = 0;
+					eventStream.on('data', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.data.topic, topics[topicUpdatedCalled]).done(function () {
+								eventStream.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
+					});
+					
+					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
+					for (let i = 0; i < topics.length; i++) {
+						stub.withArgs(topics[i]).returns(Promise.resolve(true));
+					}
+					stub.returns(Promise.resolve(false));
+					
+					// Add a subscription
+					let req2 = requestAsync({
+						method: 'post',
+						url: baseURL + "connections/" + connectionID,
+						body: {
+							subscriptions: [
+								// No reason client should do this, but separate subscriptions
+								// should be merged together
+								{
+									topics: [
+										topics[0]
+									]
+								},
+								{
+									topics: [
+										topics[1]
+									]
+								}
+							]
+						},
+						json: true
+					})
+					.spread(function (response, body) {
+						stub.restore();
+						assert.equal(response.statusCode, 201);
+						assert.typeOf(body.subscriptions, 'array');
+						assert.lengthOf(body.subscriptions, 1);
+						assert.isUndefined(body.subscriptions[0].apiKey);
+						assert.sameMembers(body.subscriptions[0].topics, topics);
+						
+						// Trigger notification on subscribed topics, which should trigger
+						// topicUpdated above
+						queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+							return {
+								event: "topicUpdated",
+								topic: topic
+							};
+						}));
+					});
+				});
+			})
+		});
+		
 		it("should ignore inaccessible subscriptions in add requests", function (done) {
-			expect(11);
+			expect(14);
 			
 			var eventStream = new EventStream;
 			eventStream.on('data', function (data) {
@@ -438,7 +511,9 @@ describe("Streamer Tests:", function () {
 					
 					var apiKey = makeAPIKey();
 					var topics = ['/groups/234567'];
-					var inaccessibleTopics = ['/groups/345678'];
+					var inaccessibleKeyTopics = ['/groups/345678'];
+					var inaccessiblePublicTopics = ['/groups/456789'];
+					var inaccessibleTopics = inaccessibleKeyTopics.concat(inaccessiblePublicTopics);
 					
 					// Listen for update notifications
 					var topicUpdatedCalled = 0;
@@ -461,10 +536,15 @@ describe("Streamer Tests:", function () {
 						method: 'post',
 						url: baseURL + "connections/" + connectionID,
 						body: {
-							subscriptions: [{
-								apiKey: apiKey,
-								topics: topics.concat(inaccessibleTopics)
-							}]
+							subscriptions: [
+								{
+									apiKey: apiKey,
+									topics: topics.concat(inaccessibleKeyTopics)
+								},
+								{
+									topics: inaccessiblePublicTopics
+								},
+							]
 						},
 						json: true
 					})
@@ -479,11 +559,12 @@ describe("Streamer Tests:", function () {
 						assert.typeOf(body.errors, 'array');
 						assert.lengthOf(body.errors, inaccessibleTopics.length);
 						assert.equal(body.errors[0].apiKey, apiKey);
-						assert.equal(body.errors[0].topic, inaccessibleTopics[0]);
-						assert.equal(body.errors[0].error, "Topic not valid for API key");
+						assert.equal(body.errors[0].topic, inaccessibleKeyTopics[0]);
+						assert.equal(body.errors[0].error, "Topic is not valid for provided API key");
+						assert.isUndefined(body.errors[1].apiKey);
+						assert.equal(body.errors[1].topic, inaccessiblePublicTopics[0]);
+						assert.equal(body.errors[1].error, "Topic is not accessible without an API key");
 						
-						// Trigger notification on subscribed topic, which should trigger
-						// topicUpdated above
 						queue.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
 							return {
 								event: "topicUpdated",
@@ -811,7 +892,7 @@ describe("Streamer Tests:", function () {
 			});
 		})
 		
-		it('should delete a topic on topicDeleted', function (done) {
+		it('should delete key-based topics on topicDeleted', function (done) {
 			expect(6);
 			
 			var eventStream = new EventStream();
@@ -855,6 +936,69 @@ describe("Streamer Tests:", function () {
 							
 							// Send topicUpdated to all topics
 							queue.postMessages(topics1.concat(topics2).map(function (topic) {
+								return {
+									event: "topicUpdated",
+									topic: topic
+								};
+							}));
+							
+							// Give topicUpdated time to be erroneously called
+							yield Promise.delay(100);
+							eventStream.end();
+							done();
+						}));
+					});
+					
+					// Send topicRemoved
+					queue.postMessages({
+						event: "topicDeleted",
+						topic: topicToRemove
+					});
+				}));
+			});
+		})
+		
+		it('should delete a public topic on topicDeleted', function (done) {
+			expect(5);
+			
+			var eventStream = new EventStream();
+			eventStream.on('data', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
+					var connectionID = fields.data.connectionID;
+					
+					var topics = ['/groups/234567', '/groups/345678'];
+					var topicToRemove = '/groups/345678';
+					
+					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
+					for (let i = 0; i < topics.length; i++) {
+						stub.withArgs(topics[i]).returns(Promise.resolve(true));
+					}
+					stub.returns(Promise.resolve(false));
+					
+					// Add subscriptions
+					var response = yield testUtils.addSubscriptions(connectionID, undefined, topics);
+					assert.equal(response.statusCode, 201);
+					
+					stub.restore();
+					
+					eventStream.on('data', function (data) {
+						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
+							assert.isUndefined(fields.data.apiKey);
+							assert.equal(fields.data.topic, topicToRemove);
+							assert.lengthOf(Object.keys(fields.data), 1);
+							
+							var remainingTopics = topics.slice(0, -1);
+							
+							var topicUpdatedCalled = 0;
+							eventStream.on('data', function (data) {
+								onEvent(data, 'topicUpdated', function (fields) {
+									assert.equal(fields.data.topic, remainingTopics[topicUpdatedCalled]);
+									topicUpdatedCalled++;
+								});
+							});
+							
+							// Send topicUpdated to all topics
+							queue.postMessages(topics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic

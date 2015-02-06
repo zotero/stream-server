@@ -303,10 +303,11 @@ module.exports = function () {
 			for (let i = 0; i < subscriptions.length; i++) {
 				let sub = subscriptions[i];
 				let conn = sub.connection;
+				// Don't include API key for single-key connections or public topics
+				let skipKey = conn.attributes.singleKey || sub.apiKey == 'public';
 				this.removeSubscription(sub);
 				this.sendEvent(conn, 'topicRemoved', JSON.stringify({
-					// Don't include API key for single-key connections
-					apiKey: conn.attributes.singleKey ? undefined : sub.apiKey,
+					apiKey: skipKey ? undefined : sub.apiKey,
 					topic: sub.topic
 				}));
 			}
@@ -405,6 +406,8 @@ module.exports = function () {
 		
 		/**
 		 * Send an event to all matching topics
+		 *
+		 * TODO: delete?
 		 *
 		 * @param {String} topic
 		 * @param {String} event - Event name. Can be null to send data-only event.

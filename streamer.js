@@ -274,7 +274,7 @@ module.exports = function (onInit) {
 				}
 			})()
 			.catch(function (e) {
-					handleRequestError(req, res, e);
+				handleRequestError(req, res, e);
 			});
 		});
 	}
@@ -297,7 +297,7 @@ module.exports = function (onInit) {
 		}
 		
 		let successful = {};
-		let failed = {};
+		let failed = [];
 		
 		// Verify subscriptions
 		for (let i = 0; i < data.subscriptions.length; i++) {
@@ -310,15 +310,16 @@ module.exports = function (onInit) {
 			let apiKey = sub.apiKey;
 			let topics = sub.topics;
 			
-			if (!apiKey) {
-				throw new HTTPError(400, "API key not provided for subscription");
-			}
-			
 			if (topics && !Array.isArray(topics)) {
 				throw new HTTPError(400, "'topics' must be an array (" + typeof topics + " given)");
 			}
 			
-			let availableTopics = yield zoteroAPI.getAllKeyTopics(apiKey);
+			if (apiKey) {
+				var availableTopics = yield zoteroAPI.getAllKeyTopics(apiKey);
+			}
+			else if (!topics) {
+				throw new HTTPError(400, "Either 'apiKey' or 'topics' must be provided");
+			}
 			
 			// Check key's access to client-provided topics
 			if (topics && topics.length) {
@@ -327,26 +328,47 @@ module.exports = function (onInit) {
 					if (topic[0] != '/') {
 						throw new HTTPError(400, "Topic must begin with a slash ('" + topic + "' provided)");
 					}
-					let hasAccess = yield zoteroAPI.checkTopicAccess(availableTopics, topic);
-					if (hasAccess) {
-						if (!successful[apiKey]) {
-							successful[apiKey] = {
-								accessTracking: false,
-								topics: []
-							};
+					let err = null;
+					if (apiKey) {
+						var hasAccess = availableTopics.indexOf(topic) != -1;
+						if (hasAccess) {
+							if (!successful[apiKey]) {
+								successful[apiKey] = {
+									accessTracking: false,
+									topics: []
+								};
+							}
+							if (successful[apiKey].topics.indexOf(topic) == -1) {
+								successful[apiKey].topics.push(topic);
+							}
 						}
-						if (successful[apiKey].topics.indexOf(topic) == -1) {
-							successful[apiKey].topics.push(topic);
+						else {
+							err = "Topic is not valid for provided API key";
 						}
 					}
 					else {
-						if (!failed[apiKey]) {
-							failed[apiKey] = [];
+						var hasAccess = yield zoteroAPI.checkPublicTopicAccess(topic);
+						if (hasAccess) {
+							if (!successful.public) {
+								successful.public = {
+									accessTracking: false,
+									topics: []
+								};
+							}
+							if (successful.public.topics.indexOf(topic) == -1) {
+								successful.public.topics.push(topic);
+							}
 						}
-						log.warn(topic + " not valid for key " + apiKey, req);
-						failed[apiKey].push({
+						else {
+							err = "Topic is not accessible without an API key";
+						}
+					}
+					if (err) {
+						log.warn(err, req);
+						failed.push({
+							apiKey: apiKey,
 							topic: topic,
-							error: "Topic not valid for API key"
+							error: err
 						});
 					}
 				}
@@ -378,21 +400,19 @@ module.exports = function (onInit) {
 			errors: []
 		};
 		
-		for (let key in successful) {
+		for (let apiKey in successful) {
 			results.subscriptions.push({
-				apiKey: key,
-				topics: connections.getTopicsByConnectionAndKey(connection, key)
+				apiKey: apiKey != 'public' ? apiKey : undefined,
+				topics: connections.getTopicsByConnectionAndKey(connection, apiKey)
 			});
 		}
-		for (let key in failed) {
-			let f = failed[key];
-			for (let i = 0; i < f.length; i++) {
-				results.errors.push({
-					apiKey: key,
-					topic: f[i].topic,
-					error: f[i].error
-				});
-			}
+		for (let i = 0; i < failed.length; i++) {
+			let f = failed[i];
+			results.errors.push({
+				apiKey: f.apiKey != 'public' ? f.apiKey : undefined,
+				topic: f.topic,
+				error: f.error
+			});
 		}
 		
 		res.writeHead(201, {
