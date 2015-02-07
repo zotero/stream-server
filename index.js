@@ -1,1 +1,1 @@
-require('./streamer')();
+require('./server')();

@@ -49,7 +49,7 @@ var makeAPIKey = testUtils.makeAPIKey;
 
 // Start server
 var defer = Promise.defer();
-require('../streamer')(function () {
+require('../server')(function () {
 	defer.resolve();
 });
 
