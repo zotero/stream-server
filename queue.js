@@ -45,7 +45,9 @@ exports.create = Promise.coroutine(function* () {
 	
 	log.info("Creating SQS queue and SNS subscription");
 	
-	var queueName = config.get('sqsQueuePrefix') + config.get('hostname') + "-" + randomstring.generate(4);
+	var queueName = config.get('sqsQueuePrefix')
+		+ "-" + config.get('hostname')
+		+ "-" + randomstring.generate(4);
 	// Determine queue ARN from the SNS topic. This assumes that the SQS queue and SNS topic
 	// are in the same account and region, but otherwise we have to make a separate request
 	// to set the policy after creating the queue, and the permissions may not take effect
