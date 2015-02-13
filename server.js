@@ -58,6 +58,7 @@ module.exports = function (onInit) {
 			log.error("Error parsing outer message: " + message.Body);
 			return;
 		}
+		log.trace(json.Message);
 		var data = JSON.parse(json.Message);
 		if (!data) {
 			log.error("Error parsing inner message: " + json.Message);
