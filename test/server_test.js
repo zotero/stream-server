@@ -82,6 +82,15 @@ describe("Streamer Tests:", function () {
 		})
 	})
 	
+	describe("Notification handler", function () {
+		it('should ignore a topicAdded for an unregistered API key', function () {
+			queue.postMessages({
+				event: "topicAdded",
+				apiKey: makeAPIKey(),
+				topic: '/users/123456'
+			});
+		})
+	})
 	
 	describe("Single-key event stream", function () {
 		it('should return 200', function (done) {

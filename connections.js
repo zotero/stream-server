@@ -150,8 +150,12 @@ module.exports = function () {
 		
 		/**
 		 * Get connections for which key access tracking is enabled for a given API key
+		 *
+		 * @return {Object[]} - An array of connection objects
 		 */
 		getAccessTrackingConnections: function (apiKey) {
+			if (!keySubscriptions[apiKey]) return [];
+			
 			let connectionIDs = {};
 			for (let i = 0; i < keySubscriptions[apiKey].length; i++) {
 				let connection = keySubscriptions[apiKey][i].connection;
