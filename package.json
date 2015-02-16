@@ -18,7 +18,8 @@
 		"findhit-proxywrap": "0.3.8",
 		"randomstring": "^1.0.3",
 		"request": "^2.51.0",
-		"strftime": "^0.8.2"
+		"strftime": "^0.8.2",
+		"ws": "^0.7.1"
 	},
 	"devDependencies": {
 		"mocha": "^2.1.0",

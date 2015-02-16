@@ -31,7 +31,6 @@ module.exports = function () {
 	//
 	// Subscription management
 	//
-	// A connection is an id, request, and response
 	// A subscription is a connection, API key, and topic combination
 	var connections = {};
 	var topicSubscriptions = {};
@@ -41,17 +40,13 @@ module.exports = function () {
 	
 	
 	return {
-		idLength: 12,
-		
 		//
 		// Connection methods
 		//
-		registerConnection: function (req, res, attributes) {
+		registerConnection: function (ws, attributes) {
 			attributes = attributes || {};
 			
-			// Single-key request ids can be short, since they're not exposed externally
-			var idLength = attributes.singleKey ? 6 : this.idLength;
-			
+			var idLength = 6;
 			do {
 				var connectionID = randomstring.generate(idLength);
 			}
@@ -62,9 +57,8 @@ module.exports = function () {
 			
 			return connections[connectionID] = {
 				id: connectionID,
-				request: req,
-				response: res,
-				remoteAddress: utils.getIPAddressFromRequest(req),
+				ws: ws,
+				remoteAddress: ws.remoteAddress,
 				subscriptions: [],
 				accessTracking: {},
 				keepaliveID: setInterval(function () {
@@ -81,9 +75,9 @@ module.exports = function () {
 			return connections[connectionID] || false;
 		},
 		
-		getConnectionByRequest: function (req) {
+		getConnectionByWebSocket: function (ws) {
 			for (let id in connections) {
-				if (connections[id].request == req) {
+				if (connections[id].ws == ws) {
 					return connections[id];
 				}
 			}
@@ -259,11 +253,11 @@ module.exports = function () {
 				+ utils.plural("client", conns.length));
 			for (let i = 0; i < conns.length; i++) {
 				let conn = conns[i];
-				this.sendEvent(conn, 'topicAdded', JSON.stringify({
+				this.sendEvent(conn, 'topicAdded', {
 					// Don't include API key for single-key connections
 					apiKey: conn.attributes.singleKey ? undefined : apiKey,
 					topic: topic
-				}));
+				});
 				this.addSubscription(conn, apiKey, topic);
 			}
 		},
@@ -310,10 +304,10 @@ module.exports = function () {
 				// Don't include API key for single-key connections or public topics
 				let skipKey = conn.attributes.singleKey || sub.apiKey == 'public';
 				this.removeSubscription(sub);
-				this.sendEvent(conn, 'topicRemoved', JSON.stringify({
+				this.sendEvent(conn, 'topicRemoved', {
 					apiKey: skipKey ? undefined : sub.apiKey,
 					topic: sub.topic
-				}));
+				});
 			}
 		},
 		
@@ -348,13 +342,13 @@ module.exports = function () {
 		closeConnection: function (conn) {
 			log.info("Closing connection", conn);
 			clearInterval(conn.keepaliveID);
-			conn.response.end()
+			conn.ws.close()
 			numConnections--;
 			delete connections[conn.id];
 		},
 		
-		deregisterConnectionByRequest: function (req) {
-			var conn = this.getConnectionByRequest(req);
+		deregisterConnectionByWebSocket: function (ws) {
+			var conn = this.getConnectionByWebSocket(ws);
 			if (conn) {
 				this.deregisterConnection(conn);
 				return true;
@@ -375,16 +369,15 @@ module.exports = function () {
 		// Event methods
 		//
 		sendEvent: function (connection, event, data) {
-			var msg = '';
-			if (event) {
-				msg += "event: " + event + "\n";
+			var json = {
+				event: event
+			};
+			for (let i in data) {
+				json[i] = data[i];
 			}
-			
-			// Add "data:" before each newline in data
-			msg += "data: " + data.trim().replace(/\n/g, "\ndata: ") + "\n\n";
-			
-			log.trace(msg.trim(), connection);
-			connection.response.write(msg);
+			json = JSON.stringify(json);
+			log.debug("Send: " + json, connection);
+			connection.ws.send(json);
 		},
 		
 		/**
@@ -404,7 +397,7 @@ module.exports = function () {
 			
 			for (let i = 0; i < topicSubscriptions[topic].length; i++) {
 				let sub = topicSubscriptions[topic][i];
-				this.sendEvent(sub.connection, event, JSON.stringify(data));
+				this.sendEvent(sub.connection, event, data);
 			}
 		},
 		
@@ -439,22 +432,12 @@ module.exports = function () {
 				if (sub.connection.attributes.singleKey) {
 					delete data.apiKey;
 				}
-				this.sendEvent(sub.connection, event, JSON.stringify(data));
+				this.sendEvent(sub.connection, event, data);
 			}
 		},
 		
-		sendRetry: function (connection, retry) {
-			var msg = "retry: " + retry + "\n\n";
-			log.trace(msg.trim(), connection, 5);
-			connection.response.write(msg);
-		},
-		
-		sendComment: function (connection, comment) {
-			connection.response.write(":" + (comment ? " " + comment : "") + "\n\n");
-		},
-		
 		keepalive: function (connection) {
-			this.sendComment(connection);
+			connection.ws.ping();
 		},
 		
 		status: function () {

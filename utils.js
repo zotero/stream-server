@@ -29,11 +29,14 @@ module.exports = function () {
 	//
 	// Private functions
 	//
-	function HTTPError (code, message) {
+	function WSError (code, message) {
+		if (code < 1000) {
+			code += 4000;
+		}
 		this.code = code;
 		this.message = message || "";
 	}
-	HTTPError.prototype = new Error; // e instanceof Error == true
+	WSError.prototype = new Error; // e instanceof Error == true
 	
 	
 	//
@@ -46,16 +49,47 @@ module.exports = function () {
 				code = 500;
 			}
 			
-			var logMessage = (msg instanceof Error) ? msg.stack : msg;
-			log.info('"' + req.method + " " + req.url + '" ' + code + " - " + logMessage, req);
+			var logMessage = msg instanceof Error ? msg.stack : msg;
+			log.info('"' + req.method + " " + req.url + '" ' + code
+				+ (logMessage ? " - " + logMessage : ""), req);
 			
-			res.writeHead(code, { "Content-Type": 'text/plain' });
+			res.writeHead(
+				code,
+				{
+					'Content-Type': 'text/plain',
+					'Connection': 'close'
+				}
+			);
 			
 			// For 500 errors, hide real error message unless this is a dev site
 			if (this.isServerError(code) && (!config.has('dev') || !config.get('dev'))) {
 				msg = "Error";
 			}
 			res.end(msg);
+		},
+		
+		wsEnd: function (ws, code, msg) {
+			if (!code) {
+				code = 4500;
+			}
+			else if (code < 1000) {
+				code += 4000;
+			}
+			
+			if (msg instanceof Error) {
+				var logMessage = msg.stack;
+				msg = msg.message;
+			}
+			else {
+				var logMessage = msg;
+			}
+			log.info(code + " - " + logMessage, ws);
+			
+			// For 500 errors, hide real error message unless this is a dev site
+			if (this.isServerError(code) && (!config.has('dev') || !config.get('dev'))) {
+				msg = "Error";
+			}
+			ws.close(code, msg);
 		},
 		
 		getIPAddressFromRequest: function (request) {
@@ -91,6 +125,6 @@ module.exports = function () {
 			return code >= 500 && code < 600;
 		},
 		
-		HTTPError: HTTPError
+		WSError: WSError
 	};
 }()

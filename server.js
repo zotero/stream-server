@@ -35,7 +35,7 @@ var path = require('path');
 var util = require('util');
 
 var utils = require('./utils');
-var HTTPError = utils.HTTPError;
+var WSError = utils.WSError;
 var log = require('./log');
 var queue = require('./queue');
 var connections = require('./connections');
@@ -94,188 +94,141 @@ module.exports = function (onInit) {
 	/**
 	 * Handle an HTTP incoming request
 	 */
-	function handleRequest(req, res, ipAddress) {
-		try {
-			// See "server.on('ipAddress')" above
-			if (ipAddress) {
-				if (req.socket.clientAddress == ipAddress) {
-					log.warn("Already had correct address in socket");
-				}
-				req.socket.clientAddress = ipAddress;
-			}
-			
-			// CORS
-			res.setHeader("Access-Control-Allow-Origin", "*");
-			res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept");
-			
-			// Handle the incoming request
-			Promise.coroutine(function* () {
-				var urlParts = url.parse(req.url, true);
-				var path = urlParts.pathname;
-				var query = urlParts.query;
-				
-				if (path == '/health') {
-					throw new HTTPError(200, "OK");
-				}
-				if (req.method == 'POST' || req.method == 'DELETE') {
-					return handleWriteRequest(req, res);
-				}
-				if (path != '/') {
-					throw new HTTPError(404, "Not found");
-				}
-				if (req.headers.accept != 'text/event-stream') {
-					throw new HTTPError(200, "Nothing to see here.");
-				}
-				// If API key provided, subscribe to all available topics
-				if (query.apiKey) {
-					let topics = yield zoteroAPI.getAllKeyTopics(query.apiKey);
-					var keyTopics = {
-						apiKey: query.apiKey,
-						topics: topics
-					};
-				}
-				else {
-					var keyTopics = false;
-				}
-				
-				req.on('close', function () {
-					log.info("Closing connection");
-					var closed = connections.deregisterConnectionByRequest(req);
-					if (!closed) {
-						log.warn("Connection not found", req);
-					}
-				});
-				res.on('close', function () {
-					log.info("Response closed", req);
-				});
-				res.on('finish', function () {
-					log.info("Response finished", req);
-				});
-				
-				return startStream(req, res, keyTopics);
-			})()
-			.catch(function (e) {
-				handleRequestError(req, res, e);
-			});
+	function handleHTTPRequest(req, res, ipAddress) {
+		log.info("Received HTTP request", req);
+		
+		var pathname = url.parse(req.url).pathname;
+		
+		// Health check
+		if (pathname == '/health') {
+			utils.end(req, res, 200);
 		}
-		catch (e) {
-			handleRequestError(req, res, e);
+		else {
+			utils.end(req, res, 400);
 		}
 	}
 	
 	
-	//
-	// Start stream for new connection
-	//
-	var startStream = Promise.coroutine(function* (req, res, keyTopics) {
-		log.info("Starting event stream", req);
+	function handleWebSocketConnection(ws) {
+		log.info("Received WebSocket request", ws);
+		var req = ws.upgradeReq;
 		
-		if (keyTopics) {
-			var singleKeyRequest = true;
-			var connectionAttributes = {
-				singleKey: true
-			};
-		}
-		
-		res.writeHead(200, {
-			'Content-Type': 'text/event-stream',
-			'Cache-Control': 'no-cache'
-		});
-		
-		var numSubscriptions = 0;
-		var numTopics = 0;
-		
-		var connection = connections.registerConnection(req, res, connectionAttributes);
-		
-		// Add a subscription for each topic
-		if (keyTopics) {
-			for (let i = 0; i < keyTopics.topics.length; i++) {
-				let topic = keyTopics.topics[i];
-				connections.addSubscription(connection, keyTopics.apiKey, topic);
+		Promise.coroutine(function* () {
+			var urlParts = url.parse(req.url, true);
+			var pathname = urlParts.pathname;
+			var query = urlParts.query;
+			
+			if (pathname != '/') {
+				utils.wsEnd(ws, 404);
 			}
-		}
-		
-		// Trigger the response headers and set the retry time (the delay before disconnected
-		// clients should try to reconnect)
-		connections.sendRetry(connection, config.get('retryTime') * 1000);
-		var data = {};
-		if (singleKeyRequest) {
-			data.topics = keyTopics.topics;
-		}
-		else {
-			data.connectionID = connection.id;
-		}
-		
-		connections.sendEvent(connection, 'connected', JSON.stringify(data));
-	});
+			
+			// If API key provided, subscribe to all available topics
+			if (query && query.key) {
+				var apiKey = query.key;
+			}
+			else if ('zotero-api-key' in req.headers) {
+				var apiKey = req.headers['zotero-api-key'];
+			}
+			
+			if (apiKey) {
+				let topics = yield zoteroAPI.getAllKeyTopics(apiKey);
+				var keyTopics = {
+					apiKey: apiKey,
+					topics: topics
+				};
+			}
+			
+			if (keyTopics) {
+				var singleKeyRequest = true;
+				var connectionAttributes = {
+					singleKey: true
+				};
+			}
+			
+			var numSubscriptions = 0;
+			var numTopics = 0;
+			
+			var connection = connections.registerConnection(ws, connectionAttributes);
+			
+			// Add a subscription for each topic
+			if (keyTopics) {
+				for (let i = 0; i < keyTopics.topics.length; i++) {
+					let topic = keyTopics.topics[i];
+					connections.addSubscription(connection, keyTopics.apiKey, topic);
+				}
+			}
+			
+			var data = {
+				retry: config.get('retryTime') * 1000
+			};
+			if (singleKeyRequest) {
+				data.topics = keyTopics.topics;
+			}
+			connections.sendEvent(connection, 'connected', data);
+			
+			ws.on('message', function (message) {
+				handleClientMessage(ws, message);
+			});
+			
+			ws.on('close', function () {
+				log.info("WebSocket connection was closed");
+				var closed = connections.deregisterConnectionByWebSocket(ws);
+				if (!closed) {
+					log.warn("Connection not found", ws);
+				}
+			});
+		})()
+		.catch(function (e) {
+			handleError(ws, e);
+		});
+
+	}
+	
 	
 	
 	/**
-	 * Handle a POST or DELETE request
+	 * Handle a client request
 	 */
-	function handleWriteRequest(req, res) {
-		var pathname = url.parse(req.url).pathname;
+	function handleClientMessage(ws, message) {
+		var connection = connections.getConnectionByWebSocket(ws);
 		
-		var matches = pathname.match(/^\/connections\/([a-zA-Z0-9]+)/);
-		if (!matches) {
-			throw new HTTPError(404);
-		}
-		if (matches[1].length == connections.idLength) {
-			var connection = connections.getConnectionByID(matches[1]);
-		}
-		if (!connection) {
-			throw new HTTPError(404, "Connection not found");
-		}
-		
-		if (req.headers['content-type'] != 'application/json') {
-			throw new HTTPError(400, "Content-Type must be application/json");
-		}
-		
-		var body = '';
-		req.on('data', function (data) {
+		Promise.coroutine(function* () {
+			if (message.length > 1e6) {
+				throw new WSError(1009);
+			}
+			
+			message = message.trim();
+			if (!message) {
+				throw new WSError(400, "Message not provided");
+			}
+			log.debug("Receive: " + message, ws);
 			try {
-				// If more than 1MB of data passed, bail
-				if (data.length > 1e6) {
-					body = "";
-					throw new HTTPError(413);
-				}
-				body += data;
+				var data = JSON.parse(message);
 			}
 			catch (e) {
-				handleRequestError(req, res, e);
+				throw new WSError(400, "Error parsing JSON");
 			}
-		});
-		
-		req.on('end', function() {
-			Promise.coroutine(function* () {
-				body = body.trim();
-				if (!body) {
-					throw new HTTPError(400, "JSON body not provided");
-				}
-				log.debug(req.method + " data: " + body, req);
-				try {
-					var data = JSON.parse(body);
-				}
-				catch (e) {
-					throw new HTTPError(400, "Error parsing JSON body");
-				}
-				
-				// Add subscriptions
-				if (req.method == "POST") {
-					yield handleCreateRequest(req, res, connection, data);
-				}
-				
-				// Delete subscription
-				else if (req.method == "DELETE") {
-					handleDeleteRequest(req, res, connection, data);
-				}
-				else {
-					throw new HTTPError(405);
-				}
-			})()
-			.catch(function (e) {
-				handleRequestError(req, res, e);
-			});
+			
+			// Add subscriptions
+			if (data.action == "createSubscriptions") {
+				yield handleCreate(connection, data);
+			}
+			
+			// Delete subscription
+			else if (data.action == "deleteSubscriptions") {
+				handleDelete(connection, data);
+			}
+			
+			else if (!data.action) {
+				throw new WSError(400, "'action' not provided");
+			}
+			
+			else {
+				throw new WSError(400, "Invalid action");
+			}
+		})()
+		.catch(function (e) {
+			handleError(ws, e);
 		});
 	}
 	
@@ -283,17 +236,20 @@ module.exports = function (onInit) {
 	/**
 	 * Handle a request to create new subscriptions on a connection
 	 *
-	 * Called from handleWriteRequest
+	 * Called from handleClientMessage
 	 */
-	var handleCreateRequest = Promise.coroutine(function* (req, res, connection, data) {
+	var handleCreate = Promise.coroutine(function* (connection, data) {
+		if (connection.attributes.singleKey) {
+			throw new WSError(405, "Single-key connection cannot be modified");
+		}
 		if (data.subscriptions === undefined) {
-			throw new HTTPError(400, "'subscriptions' array not provided");
+			throw new WSError(400, "'subscriptions' array not provided");
 		}
 		if (!Array.isArray(data.subscriptions)) {
-			throw new HTTPError(400, "'subscriptions' must be an array");
+			throw new WSError(400, "'subscriptions' must be an array");
 		}
 		if (!data.subscriptions.length) {
-			throw new HTTPError(400, "'subscriptions' array is empty");
+			throw new WSError(400, "'subscriptions' array is empty");
 		}
 		
 		let successful = {};
@@ -304,21 +260,21 @@ module.exports = function (onInit) {
 			let sub = data.subscriptions[i];
 			
 			if (typeof sub != 'object') {
-				throw new HTTPError(400, "Subscription must be an object (" + typeof sub + " given)");
+				throw new WSError(400, "Subscription must be an object (" + typeof sub + " given)");
 			}
 			
 			let apiKey = sub.apiKey;
 			let topics = sub.topics;
 			
 			if (topics && !Array.isArray(topics)) {
-				throw new HTTPError(400, "'topics' must be an array (" + typeof topics + " given)");
+				throw new WSError(400, "'topics' must be an array (" + typeof topics + " given)");
 			}
 			
 			if (apiKey) {
 				var availableTopics = yield zoteroAPI.getAllKeyTopics(apiKey);
 			}
 			else if (!topics) {
-				throw new HTTPError(400, "Either 'apiKey' or 'topics' must be provided");
+				throw new WSError(400, "Either 'apiKey' or 'topics' must be provided");
 			}
 			
 			// Check key's access to client-provided topics
@@ -326,7 +282,7 @@ module.exports = function (onInit) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
 					if (topic[0] != '/') {
-						throw new HTTPError(400, "Topic must begin with a slash ('" + topic + "' provided)");
+						throw new WSError(400, "Topic must begin with a slash ('" + topic + "' provided)");
 					}
 					let err = null;
 					if (apiKey) {
@@ -364,7 +320,7 @@ module.exports = function (onInit) {
 						}
 					}
 					if (err) {
-						log.warn(err, req);
+						log.warn(err, connection);
 						failed.push({
 							apiKey: apiKey,
 							topic: topic,
@@ -415,46 +371,61 @@ module.exports = function (onInit) {
 			});
 		}
 		
-		res.writeHead(201, {
-			'Content-Type': 'application/json'
-		});
-		res.end(JSON.stringify(results, false, "\t"));
+		connections.sendEvent(connection, 'subscriptionsCreated', results);
 	});
 	
 	
 	/**
 	 * Handle a request to delete one or more subscriptions on a connection
 	 *
-	 * Called from handleWriteRequest
+	 * Called from handleClientMessage
 	 */
-	function handleDeleteRequest(req, res, connection, data) {
-		if (data.apiKey === undefined) {
-			throw new HTTPError(400, "'apiKey' not provided");
+	function handleDelete(connection, data) {
+		if (connection.attributes.singleKey) {
+			throw new WSError(405, "Single-key connection cannot be modified");
 		}
-		if (data.topic && typeof data.topic != 'string') {
-			throw new HTTPError(400, "'topic' must be a string");
+		if (data.subscriptions === undefined) {
+			throw new WSError(400, "'subscriptions' array not provided");
+		}
+		if (!Array.isArray(data.subscriptions)) {
+			throw new WSError(400, "'subscriptions' must be an array");
+		}
+		if (!data.subscriptions.length) {
+			throw new WSError(400, "'subscriptions' array is empty");
 		}
 		
-		var numRemoved = connections.removeConnectionSubscriptionsByKeyAndTopic(
-			connection, data.apiKey, data.topic
-		);
+		var numRemoved = 0;
+		for (let i = 0; i < data.subscriptions.length; i++) {
+			let sub = data.subscriptions[i];
+			if (sub.apiKey === undefined) {
+				throw new WSError(400, "'apiKey' not provided");
+			}
+			if (sub.topic && typeof sub.topic != 'string') {
+				throw new WSError(400, "'topic' must be a string");
+			}
+			
+			numRemoved += connections.removeConnectionSubscriptionsByKeyAndTopic(
+				connection, sub.apiKey, sub.topic
+			);
+		}
+		
 		if (numRemoved) {
 			log.info("Deleted " + numRemoved + " "
-				+ utils.plural("subscription", numRemoved), req);
+				+ utils.plural("subscription", numRemoved), connection);
 		}
 		else {
-			throw new HTTPError(409, "No matching subscription");
+			throw new WSError(409, "No matching subscription");
 		}
-		throw new HTTPError(204);
+		
+		connections.sendEvent(connection, 'subscriptionsDeleted', {});
 	}
 	
-	
-	function handleRequestError(req, res, e) {
-		if (e instanceof HTTPError) {
-			utils.end(req, res, e.code, e.message);
+	function handleError(ws, e) {
+		if (e instanceof WSError) {
+			utils.wsEnd(ws, e.code, e.message);
 		}
 		else {
-			utils.end(req, res, 500, e);
+			utils.wsEnd(ws, null, e);
 		}
 	}
 	
@@ -496,8 +467,9 @@ module.exports = function (onInit) {
 				}
 			}
 			
-			log.info("Waiting 2 seconds before exiting");
-			yield Promise.delay(2000)
+			var shutdownDelay = config.get('shutdownDelay');
+			log.info("Waiting " + (shutdownDelay / 1000) + " seconds before exiting");
+			yield Promise.delay(shutdownDelay)
 			log.info("Exiting");
 			process.exit(err ? 1 : 0);
 		})();
@@ -536,7 +508,7 @@ module.exports = function (onInit) {
 			
 			process.on("unhandledRejection", function (reason, promise) {
 				log.error("Unhandled Promise rejection -- shutting down");
-				log.error(reason);
+				log.error(reason.stack);
 				shutdown();
 			});
 		}
@@ -558,8 +530,8 @@ module.exports = function (onInit) {
 				cert: fs.readFileSync(config.get('certPath'))
 			};
 			server = https.createServer(options, function (req, res) {
-				handleRequest(req, res, currentIPAddress);
-			});
+				handleHTTPRequest(req, res, currentIPAddress);
+			})
 		}
 		else {
 			if (proxyProtocol) {
@@ -569,17 +541,16 @@ module.exports = function (onInit) {
 				var http = require('http');
 			}
 			server = http.createServer(function (req, res) {
-				handleRequest(req, res, currentIPAddress);
+				handleHTTPRequest(req, res, currentIPAddress);
 			});
 		}
 		
 		// This is an unfortunate hack to get the real remote IP address passed via the PROXY
 		// protocol rather than the proxy address. proxywrap is supposed to do this, but for some
-		// reason the socket we get in the connection listener isn't the same modified one being
-		// passed by proxywrap, so instead we modify proxywrap to pass the IP address directly,
-		// store it here, and access it from the connection listener.
-		//
-		// DEBUG: Is it possible for this to change before handleRequest() gets called?
+		// reason in newer Node versions in https mode the socket we get in the connection
+		// listener isn't the same modified one being passed by proxywrap, so instead we modify
+		// proxywrap to pass the IP address directly, store it here, and access it from the
+		// connection listener.
 		if (proxyProtocol) {
 			var currentIPAddress;
 			server.on('ipAddress', function (ip) {
@@ -591,6 +562,25 @@ module.exports = function (onInit) {
 			log.error("Server threw error");
 			log.error(e);
 			shutdown(e);
+		});
+		
+		// Give server WebSocket powers
+		var WebSocketServer = require('ws').Server;
+		var wss = new WebSocketServer({
+			server: server,
+			verifyClient: function (info, cb) {
+				var pathname = url.parse(info.req.url).pathname;
+				if (pathname != '/') {
+					cb(false, 404, "Not Found");
+				}
+				else {
+					cb(true);
+				}
+			}
+		});
+		wss.on('connection', function (ws) {
+			ws.remoteAddress = currentIPAddress;
+			handleWebSocketConnection(ws);
 		});
 		
 		yield Promise.promisify(server.listen, server)(config.get('httpPort'), '0.0.0.0');

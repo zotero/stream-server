@@ -11,6 +11,7 @@ var config = {
 	statusInterval: 10,
 	keepaliveInterval: 25,
 	retryTime: 10,
+	shutdownDelay: 100,
 	awsRegion: 'us-east-1',
 	snsTopic: "",
 	sqsQueuePrefix: "StreamEvents",

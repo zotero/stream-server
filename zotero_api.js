@@ -55,10 +55,10 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 	}
 	catch (e) {
 		if (e.statusCode == 404) {
-			throw new utils.HTTPError(403, "Invalid API key");
+			throw new utils.WSError(403, "Invalid API key");
 		}
 		else if (e.statusCode) {
-			throw new utils.HTTPError(e.statusCode, e.body);
+			throw new utils.WSError(e.statusCode, e.body);
 		}
 		else {
 			throw new Error("Error getting key permissions: " + e);
@@ -80,7 +80,7 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 	}
 	catch (e) {
 		if (e.statusCode) {
-			throw new utils.HTTPError(e.statusCode, e.body);
+			throw new utils.WSError(e.statusCode, e.body);
 		}
 		else {
 			throw new Error("Error getting key groups: " + e);
@@ -120,11 +120,11 @@ exports.checkPublicTopicAccess = Promise.coroutine(function* (topic) {
 			if (utils.isClientError(response.statusCode)) {
 				response.statusCode = 500;
 			}
-			throw new utils.HTTPError(response.statusCode, response.body);
+			throw new utils.WSError(response.statusCode, response.body);
 		});
 	}
 	catch (e) {
-		if (e instanceof utils.HTTPError) {
+		if (e instanceof utils.WSError) {
 			throw e;
 		}
 		throw new Error("Error getting key permissions: " + e);

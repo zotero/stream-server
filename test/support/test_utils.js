@@ -34,59 +34,19 @@ module.exports = {
 	 * Parse an SSE and run a function if it matches the given event name
 	 *
 	 * @param {String} msg
-	 * @param {String} event - Value of event: field. If null, all events will match.
+	 * @param {String} event - Value of event property to accept. If null, all events will match.
 	 * @param {Function} func - Function to run for matching events. Function will be passed
-	 *                          an object with fields from the event (e.g., .event, .data).
-	 *                          data: lines are automatically concatenated and parsed as JSON.
+	 *                          an object with fields from the event.
 	 */
 	onEvent: function (msg, event, func) {
 		try {
-			var lines = msg.toString().trim().split(/\n/);
-			var fields = {};
-			var dataStarted = false;
-			var dataStopped = false;
-			
-			// Parse lines
-			for (let i = 0; i < lines.length; i++) {
-				let line = lines[i];
-				let parts = line.match(/^([^:]+): ?(.+)/);
-				if (!parts) {
-					throw new Error("Invalid line '" + line + "' in event data");
-				}
-				let field = parts[1];
-				let content = parts[2];
-				
-				if (field == 'data') {
-					// Make sure there's only one block of data: lines (which technically isn't
-					// required by the spec but shouldn't happen)
-					if (dataStopped) {
-						throw new Error("More than one data: block found in event");
-					}
-					dataStarted = true;
-					if (!fields.data) {
-						fields.data = '';
-					}
-					fields.data += content;
-				}
-				else {
-					if (field in fields) {
-						throw new Error("Field '" + field + "' appeared more than once in event");
-					}
-					
-					if (dataStarted) {
-						dataStopped = true;
-					}
-				}
-				fields[field] = content;
-			}
-			if (fields.data) {
-				fields.data = JSON.parse(fields.data);
-			}
-			if (event && fields.event != event) {
+			var data = JSON.parse(msg);
+			if (event && data.event != event) {
 				return;
 			}
-			
-			func(fields);
+			// Remove 'event' from passed fields
+			delete data.event;
+			func(data);
 		}
 		catch (e) {
 			console.log(e);
@@ -98,32 +58,24 @@ module.exports = {
 		return randomstring.generate(24);
 	},
 	
-	addSubscriptions: function (connectionID, apiKey, topics) {
-		return requestAsync({
-			method: 'post',
-			url: this.baseURL + "connections/" + connectionID,
-			body: {
-				subscriptions: [{
-					apiKey: apiKey,
-					topics: topics
-				}]
-			},
-			json: true
-		}).get(0);
+	addSubscriptions: function (ws, apiKey, topics) {
+		return ws.send({
+			action: 'createSubscriptions',
+			subscriptions: [{
+				apiKey: apiKey,
+				topics: topics
+			}]
+		}, 'subscriptionsCreated');
 	},
 	
-	addSubscriptionsByKeys: function (connectionID, apiKeys) {
-		return requestAsync({
-			method: 'post',
-			url: this.baseURL + "connections/" + connectionID,
-			body: {
-				subscriptions: apiKeys.map(function (apiKey) {
-					return {
-						apiKey: apiKey
-					};
-				})
-			},
-			json: true
-		}).get(0);
+	addSubscriptionsByKeys: function (ws, apiKeys) {
+		return ws.send({
+			action: 'createSubscriptions',
+			subscriptions: apiKeys.map(function (apiKey) {
+				return {
+					apiKey: apiKey
+				};
+			})
+		}, 'subscriptionsCreated');
 	}
 }

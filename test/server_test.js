@@ -37,7 +37,7 @@ mockery.warnOnUnregistered(false);
 var zoteroAPI = require('../zotero_api');
 var connections = require('../connections');
 var queue = require('./support/queue_mock');
-var EventStream = require('./support/event_stream');
+var WebSocket = require('./support/websocket');
 var assertionCount = require('./support/assertion_count');
 var assert = assertionCount.assert;
 var expect = assertionCount.expect;
@@ -77,7 +77,7 @@ describe("Streamer Tests:", function () {
 		it('should return 200', function () {
 			return requestAsync(baseURL + 'health')
 			.spread(function (response, body) {
-				assert.equal("OK", body);
+				assert.equal(body, '');
 			});
 		})
 	})
@@ -92,21 +92,25 @@ describe("Streamer Tests:", function () {
 		})
 	})
 	
+	//
+	//
+	// Single-key requests
+	//
+	//
 	describe("Single-key event stream", function () {
-		it('should return 200', function (done) {
-			var eventStream = new EventStream;
-			eventStream.on('response', function (response, body) {
-				eventStream.end();
-				assert.equal(response.statusCode, 200);
+		it('should connect', function (done) {
+			var ws = new WebSocket;
+			ws.on('open', function (message) {
+				ws.end();
 				done();
 			});
 		});
 		
 		it('should include a retry value', function (done) {
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, null, function (fields) {
-					eventStream.end();
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', function (fields) {
+					ws.end();
 					if (fields.retry) {
 						assert.equal(fields.retry, config.get('retryTime') * 1000);
 						done();
@@ -117,10 +121,10 @@ describe("Streamer Tests:", function () {
 		
 		it('should reject unknown API keys', function (done) {
 			var apiKey = "INVALID" + makeAPIKey().substr(7);
-			var eventStream = new EventStream({ apiKey: apiKey }, function (err, response, body) {
-				if (err) throw err;
-				assert.equal(response.statusCode, 403);
-				assert.equal(body, "Invalid API key");
+			var ws = new WebSocket({ apiKey: apiKey });
+			ws.on('close', function (code, reason) {
+				assert.equal(code, 4403);
+				assert.equal(reason, "Invalid API key");
 				done();
 			});
 		});
@@ -133,38 +137,41 @@ describe("Streamer Tests:", function () {
 				.withArgs(apiKey)
 				.returns(Promise.resolve(topics));
 			
-			var eventStream = new EventStream({ apiKey: apiKey });
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket({ apiKey: apiKey });
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
-					eventStream.end();
+					ws.end();
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					assert.typeOf(fields.data.topics, 'array');
-					assert.lengthOf(fields.data.topics, topics.length);
-					assert.sameMembers(fields.data.topics, topics);
+					assert.typeOf(fields.topics, 'array');
+					assert.lengthOf(fields.topics, topics.length);
+					assert.sameMembers(fields.topics, topics);
 					done();
 				});
 			});
 		});
 		
-		it('should not return a connectionID', function (done) {
+		it('should accept keys via Zotero-API-Key', function (done) {
 			var apiKey = makeAPIKey();
+			var topics = ['/users/123456', '/groups/234567'];
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(['/users/123456']));
+				.returns(Promise.resolve(topics));
 			
-			var eventStream = new EventStream({ apiKey: apiKey });
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket({ apiKey: apiKey, useHeaders: true });
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
-					eventStream.end();
+					ws.end();
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					assert.isUndefined(fields.data.connectionID);
+					assert.typeOf(fields.topics, 'array');
+					assert.lengthOf(fields.topics, topics.length);
+					assert.sameMembers(fields.topics, topics);
 					done();
 				});
 			});
-		});
+		})
 		
 		it('should add a topic on topicAdded for key', function (done) {
 			var apiKey = makeAPIKey();
@@ -175,27 +182,27 @@ describe("Streamer Tests:", function () {
 				.withArgs(apiKey)
 				.returns(Promise.resolve(topics));
 			
-			var eventStream = new EventStream({ apiKey: apiKey });
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket({ apiKey: apiKey });
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicAdded', function (fields) {
 							// API key shouldn't be passed to single-key request
-							assert.isUndefined(fields.data.apiKey);
-							assert.equal(fields.data.topic, newTopic);
-							assert.lengthOf(Object.keys(fields.data), 1);
+							assert.isUndefined(fields.apiKey);
+							assert.equal(fields.topic, newTopic);
+							assert.lengthOf(Object.keys(fields), 1);
 							
 							var allTopics = topics.concat([newTopic]);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, allTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, allTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 									if (topicUpdatedCalled == allTopics.length) {
-										eventStream.end();
+										ws.end();
 										done();
 									}
 								});
@@ -232,24 +239,24 @@ describe("Streamer Tests:", function () {
 				.withArgs(apiKey)
 				.returns(Promise.resolve(topics));
 			
-			var eventStream = new EventStream({ apiKey: apiKey });
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket({ apiKey: apiKey });
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
 							// API key shouldn't be passed to single-key request
-							assert.isUndefined(fields.data.apiKey);
-							assert.equal(fields.data.topic, topicToRemove);
-							assert.lengthOf(Object.keys(fields.data), 1);
+							assert.isUndefined(fields.apiKey);
+							assert.equal(fields.topic, topicToRemove);
+							assert.lengthOf(Object.keys(fields), 1);
 							
 							var remainingTopics = topics.slice(0, -1);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, remainingTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, remainingTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 								});
 							});
@@ -264,7 +271,7 @@ describe("Streamer Tests:", function () {
 							
 							// Give topicUpdated time to be erroneously called
 							yield Promise.delay(100);
-							eventStream.end();
+							ws.end();
 							done();
 						}));
 					});
@@ -278,24 +285,59 @@ describe("Streamer Tests:", function () {
 				});
 			});
 		});
+		
+		it('should reject subscription changes', function (done) {
+			var apiKey = makeAPIKey();
+			var topics = ['/users/123456', '/groups/234567'];
+			
+			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+				.withArgs(apiKey)
+				.returns(Promise.resolve(topics));
+			
+			var ws = new WebSocket({ apiKey: apiKey });
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
+					zoteroAPI.getAllKeyTopics.restore();
+					
+					ws.on('close', function (code, reason) {
+						assert.equal(code, 4405);
+						assert.equal(reason, "Single-key connection cannot be modified");
+						ws.end();
+						done();
+					});
+					
+					var response = yield ws.send({
+						action: 'deleteSubscriptions',
+						subscriptions: [{
+							apiKey: apiKey,
+							topic: topics[0]
+						}]
+					});
+				}));
+			});
+		});
 	})
 	
 	
+	//
+	//
+	// Multi-key requests
+	//
+	//
 	describe("Multi-key event stream", function () {
-		it('should return 200', function (done) {
-			var eventStream = new EventStream;
-			eventStream.on('response', function (response, body) {
-				eventStream.end();
-				assert.equal(response.statusCode, 200);
+		it('should connection', function (done) {
+			var ws = new WebSocket;
+			ws.on('open', function () {
+				ws.end();
 				done();
 			});
 		});
 		
 		it('should include a retry value', function (done) {
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, null, function (fields) {
-					eventStream.end();
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', function (fields) {
+					ws.end();
 					if (fields.retry) {
 						assert.equal(fields.retry, config.get('retryTime') * 1000);
 						done();
@@ -304,162 +346,124 @@ describe("Streamer Tests:", function () {
 			});
 		});
 		
-		it('should return a connectionID', function (done) {
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, 'connected', function (fields) {
-					eventStream.end();
-					let connectionID = fields.data.connectionID;
-					assert.lengthOf(connectionID, connections.idLength);
-					done();
-				});
-			});
-		});
-		
 		it("should add subscriptions for all of an API key's topics", function (done) {
-			expect(7);
+			expect(6);
 			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, 'connected', function (fields) {
-					let connectionID = fields.data.connectionID;
-					
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
 					var apiKey = makeAPIKey();
 					var topics = ['/users/123456', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
-					
-					// Listen for update notifications
-					var topicUpdatedCalled = 0;
-					eventStream.on('data', function (data) {
-						onEvent(data, 'topicUpdated', function (fields) {
-							assert.equal(fields.data.topic, topics[topicUpdatedCalled]).done(function () {
-								eventStream.end();
-								done();
-							});
-							topicUpdatedCalled++;
-						});
-					});
 					
 					sinon.stub(zoteroAPI, 'getAllKeyTopics')
 						.withArgs(apiKey)
 						.returns(Promise.resolve(topics));
 					
 					// Add a subscription
-					var req2 = requestAsync({
-						method: 'post',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							subscriptions: [{
-								apiKey: apiKey
-							}]
-						},
-						json: true
-					})
-					.spread(function (response, body) {
-						zoteroAPI.getAllKeyTopics.restore();
-						assert.equal(response.statusCode, 201);
-						assert.typeOf(body.subscriptions, 'array');
-						assert.lengthOf(body.subscriptions, 1);
-						assert.equal(body.subscriptions[0].apiKey, apiKey);
-						assert.sameMembers(body.subscriptions[0].topics, topics);
-						
-						// Trigger notification on subscribed topics, which should trigger
-						// topicUpdated above
-						queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
-							return {
-								event: "topicUpdated",
-								topic: topic
-							};
-						}));
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [{
+							apiKey: apiKey
+						}]
+					}, 'subscriptionsCreated');
+					
+					zoteroAPI.getAllKeyTopics.restore();
+					
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.equal(response.subscriptions[0].apiKey, apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, topics);
+					
+					// Listen for subscription creation and update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
 					});
-				});
+					
+					// Trigger notification on subscribed topics, which should trigger
+					// topicUpdated above
+					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
 			})
 		});
 		
 		it("should add specific provided subscriptions", function (done) {
-			expect(7);
+			expect(6);
 			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, 'connected', function (fields) {
-					let connectionID = fields.data.connectionID;
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
+					let connectionID = fields.connectionID;
 					
 					var apiKey = makeAPIKey();
 					var topics = ['/users/123456', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
-					
-					// Listen for update notifications
-					var topicUpdatedCalled = 0;
-					eventStream.on('data', function (data) {
-						onEvent(data, 'topicUpdated', function (fields) {
-							assert.equal(fields.data.topic, topics[topicUpdatedCalled]).done(function () {
-								eventStream.end();
-								done();
-							});
-							topicUpdatedCalled++;
-						});
-					});
 					
 					sinon.stub(zoteroAPI, 'getAllKeyTopics')
 						.withArgs(apiKey)
 						.returns(Promise.resolve(topics));
 					
 					// Add a subscription
-					let req2 = requestAsync({
-						method: 'post',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							subscriptions: [{
-								apiKey: apiKey,
-								topics: topics
-							}]
-						},
-						json: true
-					})
-					.spread(function (response, body) {
-						zoteroAPI.getAllKeyTopics.restore();
-						assert.equal(response.statusCode, 201);
-						assert.typeOf(body.subscriptions, 'array');
-						assert.lengthOf(body.subscriptions, 1);
-						assert.equal(body.subscriptions[0].apiKey, apiKey);
-						assert.sameMembers(body.subscriptions[0].topics, topics);
-						
-						// Trigger notification on subscribed topic, which should trigger
-						// topicUpdated above
-						queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
-							return {
-								event: "topicUpdated",
-								topic: topic
-							};
-						}));
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [{
+							apiKey: apiKey,
+							topics: topics
+						}]
+					}, 'subscriptionsCreated');
+					
+					zoteroAPI.getAllKeyTopics.restore();
+					
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.equal(response.subscriptions[0].apiKey, apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, topics);
+					
+					// Listen for subscription creation and update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
 					});
-				});
+					
+					// Trigger notification on subscribed topic, which should trigger
+					// topicUpdated above
+					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
 			})
 		});
 		
 
 		it("should add provided public subscriptions", function (done) {
-			expect(7);
+			expect(6);
 			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, 'connected', function (fields) {
-					let connectionID = fields.data.connectionID;
-					
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
 					var topics = ['/groups/123456', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
-					
-					// Listen for update notifications
-					var topicUpdatedCalled = 0;
-					eventStream.on('data', function (data) {
-						onEvent(data, 'topicUpdated', function (fields) {
-							assert.equal(fields.data.topic, topics[topicUpdatedCalled]).done(function () {
-								eventStream.end();
-								done();
-							});
-							topicUpdatedCalled++;
-						});
-					});
 					
 					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
 					for (let i = 0; i < topics.length; i++) {
@@ -468,131 +472,128 @@ describe("Streamer Tests:", function () {
 					stub.returns(Promise.resolve(false));
 					
 					// Add a subscription
-					let req2 = requestAsync({
-						method: 'post',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							subscriptions: [
-								// No reason client should do this, but separate subscriptions
-								// should be merged together
-								{
-									topics: [
-										topics[0]
-									]
-								},
-								{
-									topics: [
-										topics[1]
-									]
-								}
-							]
-						},
-						json: true
-					})
-					.spread(function (response, body) {
-						stub.restore();
-						assert.equal(response.statusCode, 201);
-						assert.typeOf(body.subscriptions, 'array');
-						assert.lengthOf(body.subscriptions, 1);
-						assert.isUndefined(body.subscriptions[0].apiKey);
-						assert.sameMembers(body.subscriptions[0].topics, topics);
-						
-						// Trigger notification on subscribed topics, which should trigger
-						// topicUpdated above
-						queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
-							return {
-								event: "topicUpdated",
-								topic: topic
-							};
-						}));
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							// No reason client should do this, but separate subscriptions
+							// should be merged together
+							{
+								topics: [
+									topics[0]
+								]
+							},
+							{
+								topics: [
+									topics[1]
+								]
+							}
+						]
+					}, 'subscriptionsCreated');
+					
+					stub.restore();
+					
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.isUndefined(response.subscriptions[0].apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, topics);
+					
+					// Listen for update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
 					});
-				});
+
+					
+					// Trigger notification on subscribed topics, which should trigger
+					// topicUpdated above
+					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
 			})
 		});
 		
 		it("should ignore inaccessible subscriptions in add requests", function (done) {
-			expect(14);
+			expect(13);
 			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
-				onEvent(data, 'connected', function (fields) {
-					let connectionID = fields.data.connectionID;
-					
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
 					var apiKey = makeAPIKey();
 					var topics = ['/groups/234567'];
 					var inaccessibleKeyTopics = ['/groups/345678'];
 					var inaccessiblePublicTopics = ['/groups/456789'];
 					var inaccessibleTopics = inaccessibleKeyTopics.concat(inaccessiblePublicTopics);
 					
+					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+						.withArgs(apiKey)
+						.returns(Promise.resolve(topics));
+					
+					// Add a subscription
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							{
+								apiKey: apiKey,
+								topics: topics.concat(inaccessibleKeyTopics)
+							},
+							{
+								topics: inaccessiblePublicTopics
+							},
+						]
+					}, 'subscriptionsCreated');
+					
+					zoteroAPI.getAllKeyTopics.restore();
+					
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.equal(response.subscriptions[0].apiKey, apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, topics);
+					
+					assert.typeOf(response.errors, 'array');
+					assert.lengthOf(response.errors, inaccessibleTopics.length);
+					assert.equal(response.errors[0].apiKey, apiKey);
+					assert.equal(response.errors[0].topic, inaccessibleKeyTopics[0]);
+					assert.equal(response.errors[0].error, "Topic is not valid for provided API key");
+					assert.isUndefined(response.errors[1].apiKey);
+					assert.equal(response.errors[1].topic, inaccessiblePublicTopics[0]);
+					assert.equal(response.errors[1].error, "Topic is not accessible without an API key");
+					
 					// Listen for update notifications
 					var topicUpdatedCalled = 0;
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicUpdated', function (fields) {
-							assert.equal(fields.data.topic, topics[topicUpdatedCalled]).done(function () {
-								eventStream.end();
+							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
+								ws.end();
 								done();
 							});
 							topicUpdatedCalled++;
 						});
 					});
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
-						.withArgs(apiKey)
-						.returns(Promise.resolve(topics));
-					
-					// Add a subscription
-					let req2 = requestAsync({
-						method: 'post',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							subscriptions: [
-								{
-									apiKey: apiKey,
-									topics: topics.concat(inaccessibleKeyTopics)
-								},
-								{
-									topics: inaccessiblePublicTopics
-								},
-							]
-						},
-						json: true
-					})
-					.spread(function (response, body) {
-						zoteroAPI.getAllKeyTopics.restore();
-						assert.equal(response.statusCode, 201);
-						assert.typeOf(body.subscriptions, 'array');
-						assert.lengthOf(body.subscriptions, 1);
-						assert.equal(body.subscriptions[0].apiKey, apiKey);
-						assert.sameMembers(body.subscriptions[0].topics, topics);
-						
-						assert.typeOf(body.errors, 'array');
-						assert.lengthOf(body.errors, inaccessibleTopics.length);
-						assert.equal(body.errors[0].apiKey, apiKey);
-						assert.equal(body.errors[0].topic, inaccessibleKeyTopics[0]);
-						assert.equal(body.errors[0].error, "Topic is not valid for provided API key");
-						assert.isUndefined(body.errors[1].apiKey);
-						assert.equal(body.errors[1].topic, inaccessiblePublicTopics[0]);
-						assert.equal(body.errors[1].error, "Topic is not accessible without an API key");
-						
-						queue.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
-							return {
-								event: "topicUpdated",
-								topic: topic
-							};
-						}));
-					});
-				});
+					queue.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
 			})
 		});
 		
 		it("should delete all topics of a provided API key", function (done) {
-			expect(2);
-			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					let connectionID = fields.data.connectionID;
-					
 					var apiKey = makeAPIKey();
 					var topics = ['/users/123456', '/groups/234567'];
 					
@@ -601,36 +602,26 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics));
 					
 					// Add subscriptions
-					var response = yield requestAsync({
-						method: 'post',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							subscriptions: [{
-								apiKey: apiKey
-							}]
-						},
-						json: true
-					}).get(0);
-					assert.equal(response.statusCode, 201);
-					
-					// Delete subscriptions
-					response = yield requestAsync({
-						method: 'delete',
-						url: baseURL + "connections/" + connectionID,
-						body: {
+					yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [{
 							apiKey: apiKey
-						},
-						json: true
-					})
-					.get(0);
-					assert.equal(response.statusCode, 204);
+						}]
+					}, 'subscriptionsCreated');
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					// Listen for update notifications
-					eventStream.on('data', function (data) {
+					var response = yield ws.send({
+						action: 'deleteSubscriptions',
+						subscriptions: [{
+							apiKey: apiKey
+						}]
+					}, 'subscriptionsDeleted');
+					
+					ws.on('message', function (data) {
+						// Listen for update notifications
 						onEvent(data, 'topicUpdated', function (fields) {
-							assert.fail(fields.data.topic, "",
+							assert.fail(fields.topic, "",
 								"topicUpdated shouldn't be called after deletion");
 						});
 					});
@@ -646,20 +637,18 @@ describe("Streamer Tests:", function () {
 					
 					// Give topicUpdated time to be erroneously called
 					yield Promise.delay(100);
-					eventStream.end();
+					ws.end();
 					done();
 				}));
 			})
 		});
 		
 		it("should delete a specific API key/topic pair ", function (done) {
-			expect(5);
+			expect(3);
 			
-			var eventStream = new EventStream;
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					let connectionID = fields.data.connectionID;
-					
 					var apiKey1 = makeAPIKey();
 					var apiKey2 = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/234567'];
@@ -676,30 +665,25 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
-					assert.equal(response.statusCode, 201);
-					
-					// Delete subscriptions
-					response = yield requestAsync({
-						method: 'delete',
-						url: baseURL + "connections/" + connectionID,
-						body: {
-							apiKey: apiKey1,
-							topic: topicToDelete
-						},
-						json: true
-					})
-					.get(0);
-					assert.equal(response.statusCode, 204);
+					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
+					// Delete subscriptions
+					var response = yield ws.send({
+						action: 'deleteSubscriptions',
+						subscriptions: [{
+							apiKey: apiKey1,
+							topic: topicToDelete
+						}]
+					}, 'subscriptionsDeleted');
+					
 					// Listen for update notifications
 					var topicUpdatedCalled = 0;
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicUpdated', function (fields) {
-							assert.equal(fields.data.topic, allTopics[topicUpdatedCalled]).done(function () {
-								eventStream.end();
+							assert.equal(fields.topic, allTopics[topicUpdatedCalled]).done(function () {
+								ws.end();
 								done();
 							});
 							topicUpdatedCalled++;
@@ -718,13 +702,11 @@ describe("Streamer Tests:", function () {
 		})
 		
 		it('should add a topic on topicAdded for key', function (done) {
-			expect(8);
+			expect(7);
 			
-			var eventStream = new EventStream();
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket();
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var connectionID = fields.data.connectionID;
-					
 					var apiKey1 = makeAPIKey();
 					var apiKey2 = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
@@ -738,27 +720,26 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
-					assert.equal(response.statusCode, 201);
+					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicAdded', function (fields) {
 							// API key shouldn't be passed to single-key request
-							assert.equal(fields.data.apiKey, apiKey1);
-							assert.equal(fields.data.topic, newTopic);
-							assert.lengthOf(Object.keys(fields.data), 2);
+							assert.equal(fields.apiKey, apiKey1);
+							assert.equal(fields.topic, newTopic);
+							assert.lengthOf(Object.keys(fields), 2);
 							
 							var allTopics = topics1.concat(topics2).concat([newTopic]);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, allTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, allTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 									if (topicUpdatedCalled == allTopics.length) {
-										eventStream.end();
+										ws.end();
 										done();
 									}
 								});
@@ -785,13 +766,11 @@ describe("Streamer Tests:", function () {
 		})
 		
 		it('should delete a topic on topicRemoved', function (done) {
-			expect(6);
+			expect(5);
 			
-			var eventStream = new EventStream();
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket();
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var connectionID = fields.data.connectionID;
-					
 					var apiKey1 = makeAPIKey();
 					var apiKey2 = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
@@ -805,23 +784,22 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
-					assert.equal(response.statusCode, 201);
+					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
-							assert.equal(fields.data.apiKey, apiKey1);
-							assert.equal(fields.data.topic, topicToRemove);
-							assert.lengthOf(Object.keys(fields.data), 2);
+							assert.equal(fields.apiKey, apiKey1);
+							assert.equal(fields.topic, topicToRemove);
+							assert.lengthOf(Object.keys(fields), 2);
 							
 							var remainingTopics = topics1.slice(0, -1).concat(topics2);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, remainingTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, remainingTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 								});
 							});
@@ -836,7 +814,7 @@ describe("Streamer Tests:", function () {
 							
 							// Give topicUpdated time to be erroneously called
 							yield Promise.delay(100);
-							eventStream.end();
+							ws.end();
 							done();
 						}));
 					});
@@ -852,13 +830,9 @@ describe("Streamer Tests:", function () {
 		})
 		
 		it('should ignore a topicRemoved for a different API key', function (done) {
-			expect(2);
-			
-			var eventStream = new EventStream();
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket();
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var connectionID = fields.data.connectionID;
-					
 					var apiKey1 = makeAPIKey();
 					var apiKey2 = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
@@ -873,14 +847,12 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptions(connectionID, apiKey1);
-					assert.equal(response.statusCode, 201);
-					var response = yield testUtils.addSubscriptions(connectionID, apiKey2);
-					assert.equal(response.statusCode, 201);
+					yield testUtils.addSubscriptions(ws, apiKey1);
+					yield testUtils.addSubscriptions(ws, apiKey2);
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
 							throw new Error("topicRemoved shouldn't be received for non-matching API key");
 						}));
@@ -895,20 +867,18 @@ describe("Streamer Tests:", function () {
 					
 					// Give topicRemoved time to be erroneously called
 					yield Promise.delay(100);
-					eventStream.end();
+					ws.end();
 					done();
 				}));
 			});
 		})
 		
 		it('should delete key-based topics on topicDeleted', function (done) {
-			expect(6);
+			expect(5);
 			
-			var eventStream = new EventStream();
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket();
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var connectionID = fields.data.connectionID;
-					
 					var apiKey1 = makeAPIKey();
 					var apiKey2 = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
@@ -922,23 +892,22 @@ describe("Streamer Tests:", function () {
 						.returns(Promise.resolve(topics2));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptionsByKeys(connectionID, [apiKey1, apiKey2]);
-					assert.equal(response.statusCode, 201);
+					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
 					zoteroAPI.getAllKeyTopics.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
-							assert.equal(fields.data.apiKey, apiKey1);
-							assert.equal(fields.data.topic, topicToRemove);
-							assert.lengthOf(Object.keys(fields.data), 2);
+							assert.equal(fields.apiKey, apiKey1);
+							assert.equal(fields.topic, topicToRemove);
+							assert.lengthOf(Object.keys(fields), 2);
 							
 							var remainingTopics = topics1.slice(0, -1).concat(topics2);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, remainingTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, remainingTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 								});
 							});
@@ -953,7 +922,7 @@ describe("Streamer Tests:", function () {
 							
 							// Give topicUpdated time to be erroneously called
 							yield Promise.delay(100);
-							eventStream.end();
+							ws.end();
 							done();
 						}));
 					});
@@ -968,13 +937,11 @@ describe("Streamer Tests:", function () {
 		})
 		
 		it('should delete a public topic on topicDeleted', function (done) {
-			expect(5);
+			expect(4);
 			
-			var eventStream = new EventStream();
-			eventStream.on('data', function (data) {
+			var ws = new WebSocket();
+			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var connectionID = fields.data.connectionID;
-					
 					var topics = ['/groups/234567', '/groups/345678'];
 					var topicToRemove = '/groups/345678';
 					
@@ -985,23 +952,22 @@ describe("Streamer Tests:", function () {
 					stub.returns(Promise.resolve(false));
 					
 					// Add subscriptions
-					var response = yield testUtils.addSubscriptions(connectionID, undefined, topics);
-					assert.equal(response.statusCode, 201);
+					yield testUtils.addSubscriptions(ws, undefined, topics);
 					
 					stub.restore();
 					
-					eventStream.on('data', function (data) {
+					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
-							assert.isUndefined(fields.data.apiKey);
-							assert.equal(fields.data.topic, topicToRemove);
-							assert.lengthOf(Object.keys(fields.data), 1);
+							assert.isUndefined(fields.apiKey);
+							assert.equal(fields.topic, topicToRemove);
+							assert.lengthOf(Object.keys(fields), 1);
 							
 							var remainingTopics = topics.slice(0, -1);
 							
 							var topicUpdatedCalled = 0;
-							eventStream.on('data', function (data) {
+							ws.on('message', function (data) {
 								onEvent(data, 'topicUpdated', function (fields) {
-									assert.equal(fields.data.topic, remainingTopics[topicUpdatedCalled]);
+									assert.equal(fields.topic, remainingTopics[topicUpdatedCalled]);
 									topicUpdatedCalled++;
 								});
 							});
@@ -1016,7 +982,7 @@ describe("Streamer Tests:", function () {
 							
 							// Give topicUpdated time to be erroneously called
 							yield Promise.delay(100);
-							eventStream.end();
+							ws.end();
 							done();
 						}));
 					});
