@@ -131,7 +131,7 @@ describe("Streamer Tests:", function () {
 		
 		it('should include all accessible topics', function (done) {
 			var apiKey = makeAPIKey();
-			var topics = ['/users/123456', '/groups/234567'];
+			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
 				.withArgs(apiKey)
@@ -153,7 +153,7 @@ describe("Streamer Tests:", function () {
 		
 		it('should accept keys via Zotero-API-Key', function (done) {
 			var apiKey = makeAPIKey();
-			var topics = ['/users/123456', '/groups/234567'];
+			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
 				.withArgs(apiKey)
@@ -175,7 +175,7 @@ describe("Streamer Tests:", function () {
 		
 		it('should add a topic on topicAdded for key', function (done) {
 			var apiKey = makeAPIKey();
-			var topics = ['/users/123456'];
+			var topics = ['/users/123456', '/users/123456/publications'];
 			var newTopic = '/groups/234567';
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
@@ -229,11 +229,11 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it('should delete a topic on topicRemoved', function (done) {
-			expect(4);
-			
 			var apiKey = makeAPIKey();
-			var topics = ['/users/123456', '/groups/234567'];
+			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			var topicToRemove = '/groups/234567';
+			
+			expect(3 + topics.length - 1);
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
 				.withArgs(apiKey)
@@ -288,7 +288,7 @@ describe("Streamer Tests:", function () {
 		
 		it('should reject subscription changes', function (done) {
 			var apiKey = makeAPIKey();
-			var topics = ['/users/123456', '/groups/234567'];
+			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
 			sinon.stub(zoteroAPI, 'getAllKeyTopics')
 				.withArgs(apiKey)
@@ -400,7 +400,7 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it("should add specific provided subscriptions", function (done) {
-			expect(6);
+			expect(7);
 			
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
@@ -408,7 +408,7 @@ describe("Streamer Tests:", function () {
 					let connectionID = fields.connectionID;
 					
 					var apiKey = makeAPIKey();
-					var topics = ['/users/123456', '/groups/234567'];
+					var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
 					
 					sinon.stub(zoteroAPI, 'getAllKeyTopics')
@@ -595,7 +595,7 @@ describe("Streamer Tests:", function () {
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
 					var apiKey = makeAPIKey();
-					var topics = ['/users/123456', '/groups/234567'];
+					var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 					
 					sinon.stub(zoteroAPI, 'getAllKeyTopics')
 						.withArgs(apiKey)

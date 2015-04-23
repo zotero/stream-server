@@ -68,6 +68,7 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 	var data = JSON.parse(body);
 	if (data.access && data.access.user) {
 		topics.push('/users/' + data.userID);
+		topics.push('/users/' + data.userID + '/publications');
 	}
 	
 	// Get groups
