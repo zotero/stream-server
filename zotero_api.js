@@ -102,7 +102,8 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 exports.checkPublicTopicAccess = Promise.coroutine(function* (topic) {
 	try {
 		// TODO: Use HEAD request once main API supports it
-		let url = config.get('apiURL') + topic.substr(1);
+		// TODO: Don't use /items
+		let url = config.get('apiURL') + topic.substr(1) + '/items';
 		var options = {
 			url: url,
 			headers: getAPIRequestHeaders()
