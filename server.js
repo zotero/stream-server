@@ -56,6 +56,26 @@ module.exports = function (onInit) {
 	var server;
 	var statusIntervalID;
 	var stopping;
+	var continuedTimeouts = {};
+	
+	/**
+	 * Debounce notification sending if there is a 'continued' flag,
+	 * otherwise instantly passthrough
+	 */
+	function debounceContinued(topic, continued, fn) {
+		var timeout = continuedTimeouts[topic];
+		if (timeout) {
+			clearTimeout(timeout);
+			continuedTimeouts[topic] = undefined;
+		}
+		
+		if (continued) {
+			continuedTimeouts[topic] = setTimeout(fn, 30000);
+		}
+		else {
+			fn();
+		}
+	}
 	
 	/**
 	 * Handle an SQS notification
@@ -73,6 +93,7 @@ module.exports = function (onInit) {
 		var apiKeyID = data.apiKeyID;
 		var topic = data.topic;
 		var event = data.event;
+		var continued = data.continued;
 		
 		switch (data.event) {
 		case 'topicUpdated':
@@ -84,9 +105,11 @@ module.exports = function (onInit) {
 					delay: Math.floor(Math.random() * (max - min + 1)) + min
 				});
 			} else {
-				connections.sendEventForTopic(topic, event, {
-					topic: topic,
-					version: data.version
+				debounceContinued(topic, continued, function () {
+					connections.sendEventForTopic(topic, event, {
+						topic: topic,
+						version: data.version
+					});
 				});
 			}
 			break;
