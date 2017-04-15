@@ -60,7 +60,7 @@ module.exports = function (onInit) {
 	
 	/**
 	 * Debounce notification sending if there is a 'continued' flag,
-	 * otherwise instantly passthrough
+	 * otherwise pass through instantly
 	 */
 	function debounceContinued(topic, continued, fn) {
 		var timeout = continuedTimeouts[topic];
