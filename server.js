@@ -70,7 +70,7 @@ module.exports = function (onInit) {
 		}
 		
 		if (continued) {
-			continuedTimeouts[topic] = setTimeout(fn, 30000);
+			continuedTimeouts[topic] = setTimeout(fn, config.get('continuedDelay'));
 		}
 		else {
 			fn();

@@ -24,12 +24,13 @@
 
 var mockery = require('mockery');
 var sinon = require('sinon');
-
+var chai = require('chai');
 var config = require('config');
 var Promise = require('bluebird');
 var fs = require('fs');
 var requestAsync = Promise.promisify(require('request'));
 
+chai.should();
 mockery.registerSubstitute('redis', './test/support/redis_mock');
 mockery.enable();
 mockery.warnOnUnregistered(false);
@@ -230,7 +231,57 @@ describe("Streamer Tests:", function () {
 				});
 			});
 		});
-
+		
+		it('should delay continued and pass through other requests', function (done) {
+			var apiKey = makeAPIKey();
+			var topic1 = '/users/000001';
+			var topic2 = '/users/000002';
+			var start = 0;
+			
+			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+				.withArgs(apiKey)
+				.returns(Promise.resolve([topic1, topic2]));
+			
+			var ws = new WebSocket({apiKey: apiKey});
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', function (fields) {
+					zoteroAPI.getAllKeyTopics.restore();
+					
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							var delta = Date.now() - start;
+							// topic1 - should get a delayed continued message
+							if (fields.topic == topic1) {
+								delta.should.be.at.least(config.get('continuedDelay'));
+							}
+							// topic2 - should instantly get a message
+							else {
+								delta.should.be.below(config.get('continuedDelay'));
+							}
+							
+							topicUpdatedCalled++;
+							if (topicUpdatedCalled == 2) {
+								ws.end();
+								done();
+							}
+						});
+					});
+					
+					start = Date.now();
+					queue.postMessages([{
+						event: "topicUpdated",
+						topic: topic1,
+						continued: true
+					}, {
+						event: "topicUpdated",
+						topic: topic2
+					}
+					]);
+				});
+			});
+		});
+		
 		it('should delete a topic on topicRemoved', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
