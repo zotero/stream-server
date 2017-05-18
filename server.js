@@ -33,39 +33,35 @@ var url = require('url');
 var domain = require('domain');
 var path = require('path');
 var util = require('util');
+var redis = require('redis');
 
 var utils = require('./utils');
 var WSError = utils.WSError;
 var log = require('./log');
-var queue = require('./queue');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
 
 module.exports = function (onInit) {
-	var queueData;
 	var server;
 	var statusIntervalID;
 	var stopping;
+	var redisClient;
 	
 	/**
 	 * Handle an SQS notification
 	 */
 	function handleNotification(message) {
-		var messageID = message.MessageId;
-		var receiptHandle = message.ReceiptHandle;
-		var json = JSON.parse(message.Body);
-		if (!json) {
-			log.error("Error parsing outer message: " + message.Body);
-			return;
+		log.trace(message);
+		try {
+			var data = JSON.parse(message);
 		}
-		log.trace(json.Message);
-		var data = JSON.parse(json.Message);
-		if (!data) {
-			log.error("Error parsing inner message: " + json.Message);
+		catch (e) {
+			log.error("Error parsing message: " + message);
+			return;
 		}
 		
 		var apiKey = data.apiKey;
-		var topic = data.topic;
+		var topic = data.topic; // Topic is not necessary because channel name equals to topic
 		var event = data.event;
 		
 		switch (data.event) {
@@ -458,15 +454,6 @@ module.exports = function (onInit) {
 				clearTimeout(statusIntervalID);
 			}
 			
-			if (queueData) {
-				try {
-					yield queue.terminate(queueData);
-				}
-				catch (e) {
-					log.error(e);
-				}
-			}
-			
 			var shutdownDelay = config.get('shutdownDelay');
 			log.info("Waiting " + (shutdownDelay / 1000) + " seconds before exiting");
 			yield Promise.delay(shutdownDelay)
@@ -475,6 +462,33 @@ module.exports = function (onInit) {
 		})();
 	}
 	
+	function initRedis() {
+		redisClient = redis.createClient({
+			host: config.redisHost,
+			enable_offline_queue: false, // No need to buffer if we resubscribe on reconnect
+			retry_strategy: function (options) {
+				// reconnect after
+				return Math.min(options.attempt * 100, 1000);
+			}
+		});
+		
+		connections.setRedisClient(redisClient);
+		
+		redisClient.on('error', function (err) {
+			log.error(err);
+		});
+		
+		redisClient.on('reconnecting', function () {
+			log.info('Redis reconnecting');
+		});
+		
+		redisClient.on('connect', function () {
+			var topics = connections.getTopicsAndKeys();
+			if (!topics.length) return;
+			log.info('Re-subscribing to ' + topics.join(' '));
+			redisClient.subscribe(topics);
+		});
+	}
 	
 	//
 	//
@@ -486,8 +500,7 @@ module.exports = function (onInit) {
 	return Promise.coroutine(function* () {
 		log.info("Starting up [pid: " + process.pid + "]");
 		
-		queueData = yield queue.create();
-		var queueURL = queueData.queueURL;
+		initRedis();
 		
 		if (process.env.NODE_ENV != 'test') {
 			process.on('SIGTERM', function () {
@@ -601,28 +614,10 @@ module.exports = function (onInit) {
 			}
 		});
 		
-		// Connect to SQS queue
-		while (true) {
-			if (stopping) {
-				break;
-			}
-			log.info("Getting messages from queue");
-			let messages = yield queue.receiveMessages(queueURL);
-			if (messages) {
-				log.info("Received " + messages.length + " "
-					+ utils.plural('message', messages.length) + " from queue");
-				for (let i = 0; i < messages.length; i++) {
-					let message = messages[i];
-					handleNotification(message);
-				}
-				let results = yield queue.deleteMessages(queueURL, messages);
-				log.info(
-					"Deleted " + results.successful + " " + utils.plural('message', results.successful)
-					+ (results.failed ? " (" + results.failed + " failed)" : "")
-					+ " from queue"
-				);
-			}
-		}
+		// Listen for Redis messages
+		redisClient.on('message', function (channel, message) {
+			handleNotification(message);
+		});
 	})()
 	.catch(function (e) {
 		log.error("Caught error");

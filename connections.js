@@ -33,56 +33,60 @@ module.exports = function () {
 	// Subscription management
 	//
 	// A subscription is a connection, API key, and topic combination
-	var connections = {};
+	var connections = [];
 	var topicSubscriptions = {};
 	var keySubscriptions = {};
 	var numConnections = 0;
 	var numSubscriptions = 0;
-	
+	var redisClient = null;
 	
 	return {
+		
+		getTopicsAndKeys: function () {
+			var topics = Object.keys(topicSubscriptions);
+			var keys = Object.keys(keySubscriptions);
+			return topics.concat(keys);
+		},
+		
+		setRedisClient: function (rc) {
+			redisClient = rc;
+		},
+		
 		//
 		// Connection methods
 		//
 		registerConnection: function (ws, attributes) {
 			attributes = attributes || {};
 			
-			var idLength = 6;
-			do {
-				var connectionID = randomstring.generate(idLength);
-			}
-			while (connectionID in connections);
-			
 			var self = this;
 			numConnections++;
 			statsD.gauge('stream-server.connections', numConnections);
 			
-			return connections[connectionID] = {
-				id: connectionID,
+			var connection = {
 				ws: ws,
 				remoteAddress: ws.remoteAddress,
 				subscriptions: [],
 				accessTracking: {},
 				keepaliveID: setInterval(function () {
-					self.keepalive(connections[connectionID]);
+					self.keepalive(connection);
 				}, config.get('keepaliveInterval') * 1000),
 				attributes: attributes
 			};
+			connections.push(connection);
+			
+			return connection;
 		},
 		
 		//
 		// Lookup
 		//
-		getConnectionByID: function (connectionID) {
-			return connections[connectionID] || false;
-		},
-		
 		getConnectionByWebSocket: function (ws) {
-			for (let id in connections) {
-				if (connections[id].ws == ws) {
-					return connections[id];
+			for (var i = 0; i < connections.length; i++) {
+				if (connections[i].ws == ws) {
+					return connections[i];
 				}
 			}
+			return null;
 		},
 		
 		/**
@@ -124,7 +128,7 @@ module.exports = function () {
 		countUniqueConnectionsInSubscriptions: function (subscriptions) {
 			var connIDs = new Set;
 			for (let i = 0; i < subscriptions.length; i++) {
-				connIDs.add(subscriptions[i].connection.id);
+				connIDs.add(subscriptions[i].connection);
 			}
 			return connIDs.size;
 		},
@@ -152,16 +156,14 @@ module.exports = function () {
 		getAccessTrackingConnections: function (apiKey) {
 			if (!keySubscriptions[apiKey]) return [];
 			
-			let connectionIDs = {};
+			let filteredConnections = [];
 			for (let i = 0; i < keySubscriptions[apiKey].length; i++) {
 				let connection = keySubscriptions[apiKey][i].connection;
 				if (this.getAccessTracking(connection, apiKey)) {
-					connectionIDs[connection.id] = true;
+					filteredConnections.push(connection);
 				}
 			}
-			return Object.keys(connectionIDs).map(function (id) {
-				return this.getConnectionByID(id);
-			}.bind(this));
+			return filteredConnections;
 		},
 		
 		//
@@ -189,13 +191,22 @@ module.exports = function () {
 				topic: topic
 			};
 			
-			connections[connection.id].subscriptions.push(subscription);
+			connection.subscriptions.push(subscription);
 			if (!topicSubscriptions[topic]) {
 				topicSubscriptions[topic] = [];
 			}
+			// Subscribe to redis channel if this topic is new
+			if (topicSubscriptions[topic].length == 0) {
+				redisClient.subscribe(topic);
+			}
 			topicSubscriptions[topic].push(subscription);
+			
 			if (!keySubscriptions[apiKey]) {
 				keySubscriptions[apiKey] = [];
+			}
+			// Subscribe to redis channel if this apiKey is new
+			if (keySubscriptions[apiKey].length == 0) {
+				redisClient.subscribe(apiKey);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -225,6 +236,9 @@ module.exports = function () {
 				let sub = topicSubscriptions[topic][i];
 				if (sub.connection == connection && sub.apiKey == apiKey) {
 					topicSubscriptions[topic].splice(i, 1);
+					if (!topicSubscriptions[topic].length) {
+						redisClient.unsubscribe(topic);
+					}
 					break;
 				}
 			}
@@ -233,6 +247,9 @@ module.exports = function () {
 				let sub = keySubscriptions[apiKey][i];
 				if (sub.connection == connection && sub.topic == topic) {
 					keySubscriptions[apiKey].splice(i, 1);
+					if (!keySubscriptions[apiKey].length) {
+						redisClient.unsubscribe(apiKey);
+					}
 					break;
 				}
 			}
@@ -344,10 +361,11 @@ module.exports = function () {
 		closeConnection: function (conn) {
 			log.info("Closing connection", conn);
 			clearInterval(conn.keepaliveID);
-			conn.ws.close()
+			conn.ws.close();
 			numConnections--;
 			statsD.gauge('stream-server.connections', numConnections);
-			delete connections[conn.id];
+			var i = connections.indexOf(conn);
+			connections.splice(i, 1);
 		},
 		
 		deregisterConnectionByWebSocket: function (ws) {
@@ -361,10 +379,9 @@ module.exports = function () {
 		
 		deregisterAllConnections: function () {
 			log.info("Closing all connections");
-			Object.keys(connections).forEach(function (id) {
-				this.deregisterConnection(connections[id]);
-				
-			}.bind(this));
+			for (var i = 0; i < connections.length; i++) {
+				this.deregisterConnection(connections[i]);
+			}
 		},
 		
 		
