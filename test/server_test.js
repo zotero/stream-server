@@ -30,13 +30,13 @@ var Promise = require('bluebird');
 var fs = require('fs');
 var requestAsync = Promise.promisify(require('request'));
 
-mockery.registerSubstitute('./queue', './test/support/queue_mock');
+mockery.registerSubstitute('./channel', './test/support/channel_mock');
 mockery.enable();
 mockery.warnOnUnregistered(false);
 
 var zoteroAPI = require('../zotero_api');
 var connections = require('../connections');
-var queue = require('./support/queue_mock');
+var Channel = require('./support/channel_mock');
 var WebSocket = require('./support/websocket');
 var assertionCount = require('./support/assertion_count');
 var assert = assertionCount.assert;
@@ -46,6 +46,7 @@ var baseURL = testUtils.baseURL;
 var onEvent = testUtils.onEvent;
 var makeAPIKey = testUtils.makeAPIKey;
 
+var channel = new Channel();
 
 // Start server
 var defer = Promise.defer();
@@ -84,7 +85,7 @@ describe("Streamer Tests:", function () {
 	
 	describe("Notification handler", function () {
 		it('should ignore a topicAdded for an unregistered API key', function () {
-			queue.postMessages({
+			channel.postMessages({
 				event: "topicAdded",
 				apiKey: makeAPIKey(),
 				topic: '/users/123456'
@@ -209,7 +210,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to old and new topics
-							queue.postMessages(allTopics.map(function (topic) {
+							channel.postMessages(allTopics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -219,7 +220,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicAdded
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicAdded",
 						apiKey: apiKey,
 						topic: newTopic
@@ -227,7 +228,7 @@ describe("Streamer Tests:", function () {
 				});
 			});
 		});
-		
+
 		it('should delete a topic on topicRemoved', function (done) {
 			var apiKey = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
@@ -262,7 +263,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							queue.postMessages(topics.map(function (topic) {
+							channel.postMessages(topics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -277,7 +278,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicRemoved",
 						apiKey: apiKey,
 						topic: topicToRemove
@@ -389,7 +390,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should trigger
 					// topicUpdated above
-					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -445,7 +446,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topic, which should trigger
 					// topicUpdated above
-					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -512,7 +513,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should trigger
 					// topicUpdated above
-					queue.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -580,7 +581,7 @@ describe("Streamer Tests:", function () {
 						});
 					});
 					
-					queue.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
+					channel.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -628,7 +629,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should NOT trigger
 					// topicUpdated above
-					queue.postMessages(topics.map(function (topic) {
+					channel.postMessages(topics.map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -691,7 +692,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Trigger notification on all topics
-					queue.postMessages(allTopics.map(function (topic) {
+					channel.postMessages(allTopics.map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -746,7 +747,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to old and new topics
-							queue.postMessages(allTopics.map(function (topic) {
+							channel.postMessages(allTopics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -756,7 +757,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicAdded
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicAdded",
 						apiKey: apiKey1,
 						topic: newTopic
@@ -805,7 +806,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							queue.postMessages(topics1.concat(topics2).map(function (topic) {
+							channel.postMessages(topics1.concat(topics2).map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -820,7 +821,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicRemoved",
 						apiKey: apiKey1,
 						topic: topicToRemove
@@ -859,7 +860,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved on wrong API key
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicRemoved",
 						apiKey: apiKey2,
 						topic: topicToRemove
@@ -913,7 +914,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							queue.postMessages(topics1.concat(topics2).map(function (topic) {
+							channel.postMessages(topics1.concat(topics2).map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -928,7 +929,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicDeleted",
 						topic: topicToRemove
 					});
@@ -973,7 +974,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							queue.postMessages(topics.map(function (topic) {
+							channel.postMessages(topics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -988,7 +989,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					queue.postMessages({
+					channel.postMessages({
 						event: "topicDeleted",
 						topic: topicToRemove
 					});

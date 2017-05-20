@@ -62,7 +62,7 @@ WebSocketClient.prototype.send = function (data, expectedEvent) {
 			});
 		});
 		
-		Promise.delay(200)
+		Promise.delay(1000)
 		.then(function () {
 			defer.reject("Timeout waiting for " + expectedEvent);
 		});

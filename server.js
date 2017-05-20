@@ -33,19 +33,19 @@ var url = require('url');
 var domain = require('domain');
 var path = require('path');
 var util = require('util');
-var redis = require('redis');
 
 var utils = require('./utils');
 var WSError = utils.WSError;
 var log = require('./log');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
+var Channel = require('./channel');
 
 module.exports = function (onInit) {
 	var server;
 	var statusIntervalID;
 	var stopping;
-	var redisClient;
+	var channel;
 	
 	/**
 	 * Handle an SQS notification
@@ -61,7 +61,7 @@ module.exports = function (onInit) {
 		}
 		
 		var apiKey = data.apiKey;
-		var topic = data.topic; // Topic is not necessary because channel name equals to topic
+		var topic = data.topic;
 		var event = data.event;
 		
 		switch (data.event) {
@@ -462,34 +462,6 @@ module.exports = function (onInit) {
 		})();
 	}
 	
-	function initRedis() {
-		redisClient = redis.createClient({
-			host: config.redisHost,
-			enable_offline_queue: false, // No need to buffer if we resubscribe on reconnect
-			retry_strategy: function (options) {
-				// reconnect after
-				return Math.min(options.attempt * 100, 1000);
-			}
-		});
-		
-		connections.setRedisClient(redisClient);
-		
-		redisClient.on('error', function (err) {
-			log.error(err);
-		});
-		
-		redisClient.on('reconnecting', function () {
-			log.info('Redis reconnecting');
-		});
-		
-		redisClient.on('connect', function () {
-			var topics = connections.getTopicsAndKeys();
-			if (!topics.length) return;
-			log.info('Re-subscribing to ' + topics.join(' '));
-			redisClient.subscribe(topics);
-		});
-	}
-	
 	//
 	//
 	//
@@ -499,8 +471,6 @@ module.exports = function (onInit) {
 	//
 	return Promise.coroutine(function* () {
 		log.info("Starting up [pid: " + process.pid + "]");
-		
-		initRedis();
 		
 		if (process.env.NODE_ENV != 'test') {
 			process.on('SIGTERM', function () {
@@ -525,6 +495,31 @@ module.exports = function (onInit) {
 				shutdown();
 			});
 		}
+		
+		//
+		// Init channel
+		//
+		
+		channel = new Channel({
+			redisHost: config.redisHost
+		});
+		
+		channel.on('error', function (err) {
+			//	log.error(err);
+		});
+		
+		channel.on('reconnecting', function () {
+			log.info('Redis reconnecting');
+		});
+		
+		channel.on('ready', function () {
+			var topics = connections.getTopicsAndKeys();
+			if (!topics.length) return;
+			log.info('Re-subscribing to ' + topics.join(' '));
+			channel.subscribe(topics);
+		});
+		
+		connections.setChannel(channel);
 		
 		//
 		// Create the HTTP(S) server
@@ -615,7 +610,7 @@ module.exports = function (onInit) {
 		});
 		
 		// Listen for Redis messages
-		redisClient.on('message', function (channel, message) {
+		channel.on('message', function (channel, message) {
 			handleNotification(message);
 		});
 	})()

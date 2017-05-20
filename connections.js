@@ -38,7 +38,7 @@ module.exports = function () {
 	var keySubscriptions = {};
 	var numConnections = 0;
 	var numSubscriptions = 0;
-	var redisClient = null;
+	var channel = null;
 	
 	return {
 		
@@ -48,8 +48,8 @@ module.exports = function () {
 			return topics.concat(keys);
 		},
 		
-		setRedisClient: function (rc) {
-			redisClient = rc;
+		setChannel: function (c) {
+			channel = c;
 		},
 		
 		//
@@ -160,7 +160,9 @@ module.exports = function () {
 			for (let i = 0; i < keySubscriptions[apiKey].length; i++) {
 				let connection = keySubscriptions[apiKey][i].connection;
 				if (this.getAccessTracking(connection, apiKey)) {
-					filteredConnections.push(connection);
+					if (filteredConnections.indexOf(connection) < 0) {
+						filteredConnections.push(connection);
+					}
 				}
 			}
 			return filteredConnections;
@@ -197,7 +199,7 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this topic is new
 			if (topicSubscriptions[topic].length == 0) {
-				redisClient.subscribe(topic);
+				channel.subscribe(topic);
 			}
 			topicSubscriptions[topic].push(subscription);
 			
@@ -206,7 +208,7 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
-				redisClient.subscribe(apiKey);
+				channel.subscribe(apiKey);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -237,7 +239,7 @@ module.exports = function () {
 				if (sub.connection == connection && sub.apiKey == apiKey) {
 					topicSubscriptions[topic].splice(i, 1);
 					if (!topicSubscriptions[topic].length) {
-						redisClient.unsubscribe(topic);
+						channel.unsubscribe(topic);
 					}
 					break;
 				}
@@ -248,7 +250,7 @@ module.exports = function () {
 				if (sub.connection == connection && sub.topic == topic) {
 					keySubscriptions[apiKey].splice(i, 1);
 					if (!keySubscriptions[apiKey].length) {
-						redisClient.unsubscribe(apiKey);
+						channel.unsubscribe(apiKey);
 					}
 					break;
 				}
