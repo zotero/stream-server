@@ -23,6 +23,7 @@
 "use strict";
 
 var Promise = require('bluebird');
+// 'ws' is used because 'uws' doesn't support more than one event listener
 var WebSocket = require('ws');
 var config = require('config');
 var testUtils = require('./test_utils');

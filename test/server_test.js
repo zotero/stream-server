@@ -24,6 +24,7 @@
 
 var mockery = require('mockery');
 var sinon = require('sinon');
+var crypto = require('crypto');
 
 var config = require('config');
 var Promise = require('bluebird');
@@ -222,7 +223,7 @@ describe("Streamer Tests:", function () {
 					// Send topicAdded
 					channel.postMessages({
 						event: "topicAdded",
-						apiKey: apiKey,
+						apiKey: crypto.createHash('md5').update(apiKey).digest("hex"),
 						topic: newTopic
 					});
 				});
@@ -280,7 +281,7 @@ describe("Streamer Tests:", function () {
 					// Send topicRemoved
 					channel.postMessages({
 						event: "topicRemoved",
-						apiKey: apiKey,
+						apiKey: crypto.createHash('md5').update(apiKey).digest("hex"),
 						topic: topicToRemove
 					});
 				});
@@ -539,6 +540,12 @@ describe("Streamer Tests:", function () {
 						.withArgs(apiKey)
 						.returns(Promise.resolve(topics));
 					
+					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
+					for (let i = 0; i < topics.length; i++) {
+						stub.withArgs(topics[i]).returns(Promise.resolve(true));
+					}
+					stub.returns(Promise.resolve(false));
+					
 					// Add a subscription
 					var response = yield ws.send({
 						action: 'createSubscriptions',
@@ -554,6 +561,7 @@ describe("Streamer Tests:", function () {
 					}, 'subscriptionsCreated');
 					
 					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.checkPublicTopicAccess.restore();
 					
 					assert.typeOf(response.subscriptions, 'array');
 					assert.lengthOf(response.subscriptions, 1);

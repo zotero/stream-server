@@ -7,12 +7,12 @@ var config = require('config');
 var Promise = require('bluebird');
 var fs = require('fs');
 
-var zoteroAPI = require('../zotero_api');
-var WebSocket = require('./support/websocket');
-var assertionCount = require('./support/assertion_count');
+var zoteroAPI = require('../../zotero_api');
+var WebSocket = require('../support/websocket');
+var assertionCount = require('../support/assertion_count');
 var assert = assertionCount.assert;
 var expect = assertionCount.expect;
-var testUtils = require('./support/test_utils');
+var testUtils = require('../support/test_utils');
 var baseURL = testUtils.baseURL;
 var onEvent = testUtils.onEvent;
 var makeAPIKey = testUtils.makeAPIKey;
@@ -30,7 +30,7 @@ redisClient.on('error', function (err) {
 
 // Start server
 var defer = Promise.defer();
-require('../server')(function () {
+require('../../server')(function () {
 	defer.resolve();
 });
 
@@ -104,6 +104,6 @@ function generateMessages() {
 }
 
 setInterval(function () {
-	console.log('Active: ' + activeConnectionNum + ', received topics updates: ' + topicUpdatedNum + '/s');
+	console.log('Active: ' + activeConnectionNum + ', received topic updates: ' + topicUpdatedNum + '/s');
 	topicUpdatedNum = 0;
 }, 1000);

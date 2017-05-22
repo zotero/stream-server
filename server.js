@@ -33,6 +33,7 @@ var url = require('url');
 var domain = require('domain');
 var path = require('path');
 var util = require('util');
+var crypto = require('crypto');
 
 var utils = require('./utils');
 var WSError = utils.WSError;
@@ -128,6 +129,7 @@ module.exports = function (onInit) {
 			
 			if (apiKey) {
 				let topics = yield zoteroAPI.getAllKeyTopics(apiKey);
+				apiKey = crypto.createHash('md5').update(apiKey).digest("hex");
 				var keyTopics = {
 					apiKey: apiKey,
 					topics: topics
@@ -499,24 +501,48 @@ module.exports = function (onInit) {
 		//
 		// Init channel
 		//
-		
 		channel = new Channel({
 			redisHost: config.redisHost
 		});
 		
+		// When Redis offline queue is deactivated, this event captures errors
+		// emitted when we try to subscribe/unsubscribe on not yet established connection.
+		// Also it prevent the script from exiting when connection error happens,
+		// therefore reconnect can happen.
 		channel.on('error', function (err) {
-			//	log.error(err);
+			//log.error(err);
 		});
 		
 		channel.on('reconnecting', function () {
-			log.info('Redis reconnecting');
+			log.trace('Redis is reconnecting');
 		});
 		
 		channel.on('ready', function () {
 			var topics = connections.getTopicsAndKeys();
 			if (!topics.length) return;
-			log.info('Re-subscribing to ' + topics.join(' '));
-			channel.subscribe(topics);
+			
+			// After reconnect, Redis connection resubscribes to all channels by default,
+			// but if channel count is too big, the connection will be blocked
+			// until re-subscription process finishes and the messages from dataserver
+			// will be buffered on redis side. If the buffer size will be exceeded, Redis closes
+			// the connection, then stream-server reconnects and this process repeats indefinitely.
+			// The default automatic re-subscriber is disabled and a custom re-subscriber is
+			// implemented that does pauses between subscription chunks and reduces stress for
+			// Redis and most importantly for stream-server.
+			// It's also good to increase "client-output-buffer-limit pubsub 32mb 8mb 60" both values
+			// to 512mb in /etc/redis/redis.conf
+			var n = 0;
+			(function fn() {
+				var chunk = [];
+				for (var i = 0; i < 10000 && n < topics.length; i++, n++) {
+					var topic = topics[n];
+					chunk.push(topic);
+				}
+				log.trace('Re-subscribing to ' + chunk.join(' '));
+				channel.subscribe(chunk, function (err) {
+					setTimeout(fn, 500);
+				});
+			})();
 		});
 		
 		connections.setChannel(channel);
