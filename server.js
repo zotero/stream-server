@@ -129,7 +129,7 @@ module.exports = function (onInit) {
 			
 			if (apiKey) {
 				let topics = yield zoteroAPI.getAllKeyTopics(apiKey);
-				apiKey = crypto.createHash('md5').update(apiKey).digest("hex");
+				apiKey = yield zoteroAPI.getKeyID(apiKey);
 				var keyTopics = {
 					apiKey: apiKey,
 					topics: topics

@@ -95,6 +95,37 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 	return topics;
 });
 
+exports.getKeyID = Promise.coroutine(function*(apiKey) {
+	var topics = [];
+	
+	// Get userID and user topic if applicable
+	var options = {
+		url: config.get('apiURL') + 'keys/' + apiKey,
+		headers: getAPIRequestHeaders()
+	}
+	try {
+		var body = yield request(options).spread(function (response, body) {
+			if (response.statusCode != 200) {
+				throw response;
+			}
+			return body;
+		});
+	}
+	catch (e) {
+		if (e.statusCode == 404) {
+			throw new utils.WSError(403, "Invalid API key");
+		}
+		else if (e.statusCode) {
+			throw new utils.WSError(e.statusCode, e.body);
+		}
+		else {
+			throw new Error("Error getting key permissions: " + e);
+		}
+	}
+	
+	var data = JSON.parse(body);
+	return data.id;
+});
 
 /**
  * Check to make sure the given topic is in the list of available topics
