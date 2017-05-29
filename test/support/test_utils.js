@@ -55,7 +55,12 @@ module.exports = {
 	},
 	
 	makeAPIKey: function () {
-		return randomstring.generate(24);
+		var apiKey = randomstring.generate(24);
+		var apiKeyID = Math.floor(Math.random() * 100000) + 1;
+		return {
+			apiKey: apiKey,
+			apiKeyID: apiKeyID
+		};
 	},
 	
 	addSubscriptions: function (ws, apiKey, topics) {

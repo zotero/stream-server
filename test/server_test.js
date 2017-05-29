@@ -24,7 +24,6 @@
 
 var mockery = require('mockery');
 var sinon = require('sinon');
-var crypto = require('crypto');
 
 var config = require('config');
 var Promise = require('bluebird');
@@ -88,7 +87,7 @@ describe("Streamer Tests:", function () {
 		it('should ignore a topicAdded for an unregistered API key', function () {
 			channel.postMessages({
 				event: "topicAdded",
-				apiKey: makeAPIKey(),
+				apiKeyID: makeAPIKey().apiKeyID,
 				topic: '/users/123456'
 			});
 		})
@@ -122,7 +121,7 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it('should reject unknown API keys', function (done) {
-			var apiKey = "INVALID" + makeAPIKey().substr(7);
+			var apiKey = "INVALID" + makeAPIKey().apiKey.substr(7);
 			var ws = new WebSocket({ apiKey: apiKey });
 			ws.on('close', function (code, reason) {
 				assert.equal(code, 4403);
@@ -132,18 +131,18 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it('should include all accessible topics', function (done) {
-			var apiKey = makeAPIKey();
+			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
-			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(topics));
+				.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 			
 			var ws = new WebSocket({ apiKey: apiKey });
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
 					ws.end();
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(fields.topics, 'array');
 					assert.lengthOf(fields.topics, topics.length);
@@ -154,18 +153,18 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it('should accept keys via Zotero-API-Key', function (done) {
-			var apiKey = makeAPIKey();
+			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
-			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(topics));
+				.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 			
 			var ws = new WebSocket({ apiKey: apiKey, useHeaders: true });
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
 					ws.end();
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(fields.topics, 'array');
 					assert.lengthOf(fields.topics, topics.length);
@@ -176,18 +175,18 @@ describe("Streamer Tests:", function () {
 		})
 		
 		it('should add a topic on topicAdded for key', function (done) {
-			var apiKey = makeAPIKey();
+			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications'];
 			var newTopic = '/groups/234567';
 			
-			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(topics));
+				.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 			
 			var ws = new WebSocket({ apiKey: apiKey });
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicAdded', function (fields) {
@@ -223,7 +222,7 @@ describe("Streamer Tests:", function () {
 					// Send topicAdded
 					channel.postMessages({
 						event: "topicAdded",
-						apiKey: crypto.createHash('md5').update(apiKey).digest("hex"),
+						apiKeyID: apiKeyID,
 						topic: newTopic
 					});
 				});
@@ -231,20 +230,20 @@ describe("Streamer Tests:", function () {
 		});
 
 		it('should delete a topic on topicRemoved', function (done) {
-			var apiKey = makeAPIKey();
+			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			var topicToRemove = '/groups/234567';
 			
 			expect(3 + topics.length - 1);
 			
-			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(topics));
+				.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 			
 			var ws = new WebSocket({ apiKey: apiKey });
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', function (fields) {
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
@@ -281,7 +280,7 @@ describe("Streamer Tests:", function () {
 					// Send topicRemoved
 					channel.postMessages({
 						event: "topicRemoved",
-						apiKey: crypto.createHash('md5').update(apiKey).digest("hex"),
+						apiKeyID: apiKeyID,
 						topic: topicToRemove
 					});
 				});
@@ -289,17 +288,17 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it('should reject subscription changes', function (done) {
-			var apiKey = makeAPIKey();
+			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 			
-			sinon.stub(zoteroAPI, 'getAllKeyTopics')
+			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
-				.returns(Promise.resolve(topics));
+				.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 			
 			var ws = new WebSocket({ apiKey: apiKey });
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('close', function (code, reason) {
 						assert.equal(code, 4405);
@@ -354,13 +353,13 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey = makeAPIKey();
+					var {apiKey, apiKeyID} = makeAPIKey();
 					var topics = ['/users/123456', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey)
-						.returns(Promise.resolve(topics));
+						.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 					
 					// Add a subscription
 					var response = yield ws.send({
@@ -370,7 +369,7 @@ describe("Streamer Tests:", function () {
 						}]
 					}, 'subscriptionsCreated');
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(response.subscriptions, 'array');
 					assert.lengthOf(response.subscriptions, 1);
@@ -409,13 +408,13 @@ describe("Streamer Tests:", function () {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
 					let connectionID = fields.connectionID;
 					
-					var apiKey = makeAPIKey();
+					var {apiKey, apiKeyID} = makeAPIKey();
 					var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 					var ignoredTopics = ['/groups/345678'];
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey)
-						.returns(Promise.resolve(topics));
+						.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 					
 					// Add a subscription
 					var response = yield ws.send({
@@ -426,7 +425,7 @@ describe("Streamer Tests:", function () {
 						}]
 					}, 'subscriptionsCreated');
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(response.subscriptions, 'array');
 					assert.lengthOf(response.subscriptions, 1);
@@ -530,15 +529,15 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey = makeAPIKey();
+					var {apiKey, apiKeyID} = makeAPIKey();
 					var topics = ['/groups/234567'];
 					var inaccessibleKeyTopics = ['/groups/345678'];
 					var inaccessiblePublicTopics = ['/groups/456789'];
 					var inaccessibleTopics = inaccessibleKeyTopics.concat(inaccessiblePublicTopics);
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey)
-						.returns(Promise.resolve(topics));
+						.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 					
 					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
 					for (let i = 0; i < topics.length; i++) {
@@ -560,7 +559,7 @@ describe("Streamer Tests:", function () {
 						]
 					}, 'subscriptionsCreated');
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					zoteroAPI.checkPublicTopicAccess.restore();
 					
 					assert.typeOf(response.subscriptions, 'array');
@@ -603,12 +602,12 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey = makeAPIKey();
+					var {apiKey, apiKeyID} = makeAPIKey();
 					var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey)
-						.returns(Promise.resolve(topics));
+						.returns(Promise.resolve({topics: topics, apiKeyID: apiKeyID}));
 					
 					// Add subscriptions
 					yield ws.send({
@@ -618,7 +617,7 @@ describe("Streamer Tests:", function () {
 						}]
 					}, 'subscriptionsCreated');
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					var response = yield ws.send({
 						action: 'deleteSubscriptions',
@@ -658,8 +657,8 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey1 = makeAPIKey();
-					var apiKey2 = makeAPIKey();
+					var {apiKey: apiKey1, apiKeyID: apiKeyID1} = makeAPIKey();
+					var {apiKey: apiKey2, apiKeyID: apiKeyID2} = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/234567'];
 					var topics2 = ['/users/234567', '/groups/234567'];
 					// Should receive notifications for all topics, since the deleted topic
@@ -667,16 +666,16 @@ describe("Streamer Tests:", function () {
 					var allTopics = ['/users/123456', '/users/234567', '/groups/234567'];
 					var topicToDelete = '/groups/234567';
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey1)
-						.returns(Promise.resolve(topics1))
+						.returns(Promise.resolve({topics: topics1, apiKeyID: apiKeyID1}))
 						.withArgs(apiKey2)
-						.returns(Promise.resolve(topics2));
+						.returns(Promise.resolve({topics: topics2, apiKeyID: apiKeyID2}));
 					
 					// Add subscriptions
 					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					// Delete subscriptions
 					var response = yield ws.send({
@@ -716,22 +715,22 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket();
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey1 = makeAPIKey();
-					var apiKey2 = makeAPIKey();
+					var {apiKey: apiKey1, apiKeyID: apiKeyID1} = makeAPIKey();
+					var {apiKey: apiKey2, apiKeyID: apiKeyID2} = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
 					var topics2 = ['/users/234567'];
 					var newTopic = '/groups/456789';
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey1)
-						.returns(Promise.resolve(topics1))
+						.returns(Promise.resolve({topics: topics1, apiKeyID: apiKeyID1}))
 						.withArgs(apiKey2)
-						.returns(Promise.resolve(topics2));
+						.returns(Promise.resolve({topics: topics2, apiKeyID: apiKeyID2}));
 					
 					// Add subscriptions
 					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicAdded', function (fields) {
@@ -767,7 +766,7 @@ describe("Streamer Tests:", function () {
 					// Send topicAdded
 					channel.postMessages({
 						event: "topicAdded",
-						apiKey: apiKey1,
+						apiKeyID: apiKeyID1,
 						topic: newTopic
 					});
 				}));
@@ -780,22 +779,22 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket();
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey1 = makeAPIKey();
-					var apiKey2 = makeAPIKey();
+					var {apiKey: apiKey1, apiKeyID: apiKeyID1} = makeAPIKey();
+					var {apiKey: apiKey2, apiKeyID: apiKeyID2} = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
 					var topics2 = ['/users/234567'];
 					var topicToRemove = '/groups/345678';
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey1)
-						.returns(Promise.resolve(topics1))
+						.returns(Promise.resolve({topics: topics1, apiKeyID: apiKeyID1}))
 						.withArgs(apiKey2)
-						.returns(Promise.resolve(topics2));
+						.returns(Promise.resolve({topics: topics2, apiKeyID: apiKeyID2}));
 					
 					// Add subscriptions
 					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
@@ -831,7 +830,7 @@ describe("Streamer Tests:", function () {
 					// Send topicRemoved
 					channel.postMessages({
 						event: "topicRemoved",
-						apiKey: apiKey1,
+						apiKeyID: apiKeyID1,
 						topic: topicToRemove
 					});
 				}));
@@ -842,24 +841,24 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket();
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey1 = makeAPIKey();
-					var apiKey2 = makeAPIKey();
+					var {apiKey: apiKey1, apiKeyID: apiKeyID1} = makeAPIKey();
+					var {apiKey: apiKey2, apiKeyID: apiKeyID2} = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
 					var topics2 = ['/users/234567'];
 					var topicToRemove = '/groups/345678';
 					var allTopics = topics1.concat(topics2);
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey1)
-						.returns(Promise.resolve(topics1))
+						.returns(Promise.resolve({topics: topics1, apiKeyID: apiKeyID1}))
 						.withArgs(apiKey2)
-						.returns(Promise.resolve(topics2));
+						.returns(Promise.resolve({topics: topics2, apiKeyID: apiKeyID2}));
 					
 					// Add subscriptions
 					yield testUtils.addSubscriptions(ws, apiKey1);
 					yield testUtils.addSubscriptions(ws, apiKey2);
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {
@@ -870,7 +869,7 @@ describe("Streamer Tests:", function () {
 					// Send topicRemoved on wrong API key
 					channel.postMessages({
 						event: "topicRemoved",
-						apiKey: apiKey2,
+						apiKeyID: apiKeyID2,
 						topic: topicToRemove
 					});
 					
@@ -888,22 +887,22 @@ describe("Streamer Tests:", function () {
 			var ws = new WebSocket();
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
-					var apiKey1 = makeAPIKey();
-					var apiKey2 = makeAPIKey();
+					var {apiKey: apiKey1, apiKeyID: apiKeyID1} = makeAPIKey();
+					var {apiKey: apiKey2, apiKeyID: apiKeyID2} = makeAPIKey();
 					var topics1 = ['/users/123456', '/groups/345678'];
 					var topics2 = ['/users/234567'];
 					var topicToRemove = '/groups/345678';
 					
-					sinon.stub(zoteroAPI, 'getAllKeyTopics')
+					sinon.stub(zoteroAPI, 'getKeyInfo')
 						.withArgs(apiKey1)
-						.returns(Promise.resolve(topics1))
+						.returns(Promise.resolve({topics: topics1, apiKeyID: apiKeyID1}))
 						.withArgs(apiKey2)
-						.returns(Promise.resolve(topics2));
+						.returns(Promise.resolve({topics: topics2, apiKeyID: apiKeyID2}));
 					
 					// Add subscriptions
 					yield testUtils.addSubscriptionsByKeys(ws, [apiKey1, apiKey2]);
 					
-					zoteroAPI.getAllKeyTopics.restore();
+					zoteroAPI.getKeyInfo.restore();
 					
 					ws.on('message', function (data) {
 						onEvent(data, 'topicRemoved', Promise.coroutine(function* (fields) {

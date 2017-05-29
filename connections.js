@@ -33,6 +33,7 @@ module.exports = function () {
 	// Subscription management
 	//
 	// A subscription is a connection, API key, and topic combination
+	var keyMap = {};
 	var connections = [];
 	var topicSubscriptions = {};
 	var keySubscriptions = {};
@@ -50,6 +51,21 @@ module.exports = function () {
 		
 		setChannel: function (c) {
 			channel = c;
+		},
+		
+		//
+		// Key mappings
+		//
+		addKeyMapping: function (apiKeyID, apiKey) {
+			keyMap[apiKeyID] = apiKey;
+		},
+		
+		removeKeyMapping: function (apiKeyID) {
+			delete keyMap[apiKeyID];
+		},
+		
+		getKeyByID: function (apiKeyID) {
+			return keyMap[apiKeyID];
 		},
 		
 		//
@@ -171,7 +187,7 @@ module.exports = function () {
 		//
 		// Subscription management
 		//
-		addSubscription: function (connection, apiKey, topic) {
+		addSubscription: function (connection, apiKeyID, apiKey, topic) {
 			if (!topicSubscriptions[topic]) {
 				topicSubscriptions[topic] = [];
 			}
@@ -189,6 +205,7 @@ module.exports = function () {
 			
 			var subscription = {
 				connection: connection,
+				apiKeyID: apiKeyID,
 				apiKey: apiKey,
 				topic: topic
 			};
@@ -208,7 +225,8 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
-				channel.subscribe(apiKey);
+				this.addKeyMapping(apiKeyID, apiKey);
+				channel.subscribe(apiKeyID);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -217,6 +235,7 @@ module.exports = function () {
 		
 		removeSubscription: function (subscription) {
 			var connection = subscription.connection;
+			var apiKeyID = subscription.apiKeyID;
 			var apiKey = subscription.apiKey;
 			var topic = subscription.topic;
 			
@@ -250,7 +269,8 @@ module.exports = function () {
 				if (sub.connection == connection && sub.topic == topic) {
 					keySubscriptions[apiKey].splice(i, 1);
 					if (!keySubscriptions[apiKey].length) {
-						channel.unsubscribe(apiKey);
+						this.removeKeyMapping(apiKeyID);
+						channel.unsubscribe(apiKeyID);
 					}
 					break;
 				}
@@ -268,7 +288,9 @@ module.exports = function () {
 		 * This sends a topicAdded event to each connection where the API key
 		 * is in access-tracking mode and then adds the subscription.
 		 */
-		handleTopicAdded: function (apiKey, topic) {
+		handleTopicAdded: function (apiKeyID, topic) {
+			var apiKey = this.getKeyByID(apiKeyID);
+			log.info('app ' + apiKey);
 			var conns = this.getAccessTrackingConnections(apiKey);
 			log.info("Sending topicAdded to " + conns.length + " "
 				+ utils.plural("client", conns.length));
@@ -279,7 +301,7 @@ module.exports = function () {
 					apiKey: conn.attributes.singleKey ? undefined : apiKey,
 					topic: topic
 				});
-				this.addSubscription(conn, apiKey, topic);
+				this.addSubscription(conn, apiKeyID, apiKey, topic);
 			}
 		},
 		
@@ -289,7 +311,8 @@ module.exports = function () {
 		 * Deletes the subscription with the given API key and topic and then
 		 * sends out a topicRemoved for each one.
 		 */
-		handleTopicRemoved: function (apiKey, topic) {
+		handleTopicRemoved: function (apiKeyID, topic) {
+			var apiKey = this.getKeyByID(apiKeyID);
 			var subs = this.getSubscriptionsByKeyAndTopic(apiKey, topic);
 			this.deleteAndNotifySubscriptions(subs);
 		},

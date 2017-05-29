@@ -61,7 +61,7 @@ module.exports = function (onInit) {
 			return;
 		}
 		
-		var apiKey = data.apiKey;
+		var apiKeyID = data.apiKeyID;
 		var topic = data.topic;
 		var event = data.event;
 		
@@ -74,11 +74,11 @@ module.exports = function (onInit) {
 			break;
 		
 		case 'topicAdded':
-			connections.handleTopicAdded(apiKey, topic);
+			connections.handleTopicAdded(apiKeyID, topic);
 			break;
 			
 		case 'topicRemoved':
-			connections.handleTopicRemoved(apiKey, topic);
+			connections.handleTopicRemoved(apiKeyID, topic);
 			break;
 		
 		case 'topicDeleted':
@@ -128,9 +128,9 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				let topics = yield zoteroAPI.getAllKeyTopics(apiKey);
-				apiKey = yield zoteroAPI.getKeyID(apiKey);
+				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 				var keyTopics = {
+					apiKeyID: apiKeyID,
 					apiKey: apiKey,
 					topics: topics
 				};
@@ -152,7 +152,7 @@ module.exports = function (onInit) {
 			if (keyTopics) {
 				for (let i = 0; i < keyTopics.topics.length; i++) {
 					let topic = keyTopics.topics[i];
-					connections.addSubscription(connection, keyTopics.apiKey, topic);
+					connections.addSubscription(connection, keyTopics.apiKeyID, keyTopics.apiKey, topic);
 				}
 			}
 			
@@ -269,7 +269,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				var availableTopics = yield zoteroAPI.getAllKeyTopics(apiKey);
+				var {topics: availableTopics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 			}
 			else if (!topics) {
 				throw new WSError(400, "Either 'apiKey' or 'topics' must be provided");
@@ -288,6 +288,7 @@ module.exports = function (onInit) {
 						if (hasAccess) {
 							if (!successful[apiKey]) {
 								successful[apiKey] = {
+									apiKeyID: apiKeyID,
 									accessTracking: false,
 									topics: []
 								};
@@ -330,6 +331,7 @@ module.exports = function (onInit) {
 			// If no topics provided, use all of the key's available topics
 			else {
 				successful[apiKey] = {
+					apiKeyID: apiKeyID,
 					accessTracking: true,
 					topics: availableTopics
 				}
@@ -344,7 +346,7 @@ module.exports = function (onInit) {
 			}
 			let topics = keySubs.topics;
 			for (let j = 0; j < topics.length; j++) {
-				connections.addSubscription(connection, apiKey, topics[j]);
+				connections.addSubscription(connection, keySubs.apiKeyID, apiKey, topics[j]);
 			}
 		}
 		
