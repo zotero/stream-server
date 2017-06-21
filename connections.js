@@ -54,6 +54,7 @@ module.exports = function () {
 			
 			var self = this;
 			numConnections++;
+			statsD.gauge('stream-server.connections', numConnections);
 			
 			return connections[connectionID] = {
 				id: connectionID,
@@ -344,6 +345,7 @@ module.exports = function () {
 			clearInterval(conn.keepaliveID);
 			conn.ws.close()
 			numConnections--;
+			statsD.gauge('stream-server.connections', numConnections);
 			delete connections[conn.id];
 		},
 		
