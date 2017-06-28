@@ -19,13 +19,14 @@
 		"randomstring": "^1.0.3",
 		"request": "^2.51.0",
 		"strftime": "^0.8.2",
-		"ws": "^0.7.1"
+		"uws": "^8.14.0"
 	},
 	"devDependencies": {
 		"mocha": "^2.1.0",
 		"mockery": "^1.4.0",
 		"chai": "^1.10.0",
-		"sinon": "^1.12.2"
+		"sinon": "^1.12.2",
+		"ws": "^0.7.1"
 	},
 	"engines": {
 		"node": ">=0.12.0",
