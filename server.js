@@ -565,7 +565,7 @@ module.exports = function (onInit) {
 		});
 		
 		// Give server WebSocket powers
-		var WebSocketServer = require('ws').Server;
+		var WebSocketServer = require('uws').Server;
 		var wss = new WebSocketServer({
 			server: server,
 			verifyClient: function (info, cb) {
