@@ -26,6 +26,7 @@ var config = require('config');
 var randomstring = require('randomstring');
 var utils = require('./utils');
 var log = require('./log');
+var statsD = require('./statsd');
 
 module.exports = function () {
 	//
@@ -54,6 +55,7 @@ module.exports = function () {
 			
 			var self = this;
 			numConnections++;
+			statsD.gauge('stream-server.connections', numConnections);
 			
 			return connections[connectionID] = {
 				id: connectionID,
@@ -344,6 +346,7 @@ module.exports = function () {
 			clearInterval(conn.keepaliveID);
 			conn.ws.close()
 			numConnections--;
+			statsD.gauge('stream-server.connections', numConnections);
 			delete connections[conn.id];
 		},
 		

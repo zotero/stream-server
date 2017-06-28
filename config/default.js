@@ -18,7 +18,10 @@ var config = {
 	apiURL: 'https://api.zotero.org/',
 	apiVersion: 3,
 	apiRequestHeaders: {},
-	longStackTraces: false
+	longStackTraces: false,
+	statsD: {
+		host: ''
+	}
 };
 
 module.exports = config;
