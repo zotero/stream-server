@@ -26,6 +26,7 @@ var config = require('config');
 var randomstring = require('randomstring');
 var utils = require('./utils');
 var log = require('./log');
+var statsD = require('./statsd');
 
 module.exports = function () {
 	//
