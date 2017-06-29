@@ -12,7 +12,10 @@ var config = {
 	keepaliveInterval: 25,
 	retryTime: 10,
 	shutdownDelay: 100,
-	redisHost: 'localhost',
+	redis: {
+		host: '',
+		prefix: ''
+	},
 	apiURL: 'https://api.zotero.org/',
 	apiVersion: 3,
 	apiRequestHeaders: {},

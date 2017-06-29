@@ -23,15 +23,16 @@
 var redis = require('redis');
 
 var Channel = function (options) {
-	this.redisClient = redis.createClient({
-		host: options.redisHost,
-		enable_offline_queue: false, // No need to buffer if we resubscribe on reconnect
-		disable_resubscribing: true, // Because we have a custom re-subscriber
-		retry_strategy: function (options) {
-			// reconnect after
-			return Math.min(options.attempt * 100, 1000);
-		}
-	});
+	// No need to buffer if we resubscribe on reconnect
+	options.redis.enable_offline_queue = false;
+	// We have a custom re-subscriber
+	options.redis.disable_resubscribing = true;
+	options.redis.retry_strategy = function (options) {
+		// reconnect after
+		return Math.min(options.attempt * 100, 1000);
+	};
+	
+	this.redisClient = redis.createClient(options.redis);
 };
 
 module.exports = Channel;

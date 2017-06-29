@@ -504,15 +504,16 @@ module.exports = function (onInit) {
 		// Init channel
 		//
 		channel = new Channel({
-			redisHost: config.redisHost
+			redis: config.get('redis')
 		});
 		
 		// When Redis offline queue is deactivated, this event captures errors
 		// emitted when we try to subscribe/unsubscribe on not yet established connection.
-		// Also it prevent the script from exiting when connection error happens,
+		// Also it prevents the script from exiting when connection error happens,
 		// therefore reconnect can happen.
 		channel.on('error', function (err) {
 			//log.error(err);
+			// TODO: Skip subscribe/unsubscribe errors, but still log other errors.
 		});
 		
 		channel.on('reconnecting', function () {
@@ -524,14 +525,14 @@ module.exports = function (onInit) {
 			if (!topics.length) return;
 			
 			// After reconnect, Redis connection resubscribes to all channels by default,
-			// but if channel count is too big, the connection will be blocked
+			// but if the channel count is too big, the connection will be blocked
 			// until re-subscription process finishes and the messages from dataserver
 			// will be buffered on redis side. If the buffer size will be exceeded, Redis closes
 			// the connection, then stream-server reconnects and this process repeats indefinitely.
 			// The default automatic re-subscriber is disabled and a custom re-subscriber is
 			// implemented that does pauses between subscription chunks and reduces stress for
 			// Redis and most importantly for stream-server.
-			// It's also good to increase "client-output-buffer-limit pubsub 32mb 8mb 60" both values
+			// It's possible to increase "client-output-buffer-limit pubsub 32mb 8mb 60" both values
 			// to 512mb in /etc/redis/redis.conf
 			var n = 0;
 			(function fn() {
