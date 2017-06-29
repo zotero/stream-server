@@ -19,10 +19,7 @@ var makeAPIKey = testUtils.makeAPIKey;
 
 
 var redis = require('redis');
-
-var redisClient = redis.createClient({
-	host: config.get('redisHost')
-});
+var redisClient = redis.createClient(config.get('redis'));
 
 redisClient.on('error', function (err) {
 	console.log('Redis error', err);
@@ -39,14 +36,18 @@ var topics = [];
 var topicUpdatedNum = 0;
 var activeConnectionNum = 0;
 
-sinon.stub(zoteroAPI, 'getAllKeyTopics').callsFake(Promise.coroutine(function*(apiKey) {
+sinon.stub(zoteroAPI, 'getKeyInfo').callsFake(Promise.coroutine(function*(apiKey) {
 	var names = [];
 	for (var i = 0; i < 5; i++) {
 		var name = '/users/' + (Math.floor(Math.random() * 999999) + 100000).toString();
 		names.push(name);
 		topics.push(name);
 	}
-	return names;
+	
+	return {
+		topics: names,
+		apiKeyID: Math.floor(Math.random() * 99999999)
+	};
 }));
 
 function makeConnections(max, callback) {
