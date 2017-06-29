@@ -21,6 +21,23 @@
  */
 
 var config = require('config');
+var log = require('./log');
 var StatsD = require('node-statsd');
 
-module.exports = new StatsD(config.get('statsD'));
+var c = config.get('statsD');
+if (c.host) {
+	let client = new StatsD(config.get('statsD'));
+	client.socket.on('error', function (error) {
+		return log.error("StatsD: " + error);
+	});
+	module.exports = client;
+}
+else {
+	log.warn("StatsD host not configured");
+	// Stub all function calls
+	module.exports = new Proxy({}, {
+		get: function (target, property, receiver) {
+			return () => {};
+		}
+	});
+}
