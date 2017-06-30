@@ -12,14 +12,14 @@
 		"url": "https://github.com/zotero/stream-server"
 	},
 	"dependencies": {
-		"aws-sdk": "^2.1.8",
-		"bluebird": "^2.9.4",
+		"aws-sdk": "^2.79.0",
+		"bluebird": "^2.11.0",
 		"config": "^1.1.0",
-		"findhit-proxywrap": "0.3.8",
+		"findhit-proxywrap": "^0.3.12",
 		"node-statsd": "^0.1.1",
 		"randomstring": "^1.0.3",
 		"request": "^2.51.0",
-		"strftime": "^0.8.2",
+		"strftime": "^0.10.0",
 		"uws": "^8.14.0"
 	},
 	"devDependencies": {
@@ -27,7 +27,7 @@
 		"mockery": "^1.4.0",
 		"chai": "^1.10.0",
 		"sinon": "^1.12.2",
-		"ws": "^0.7.1"
+		"ws": "^3.0.0"
 	},
 	"engines": {
 		"node": ">=0.12.0",
