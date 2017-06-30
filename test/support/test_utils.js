@@ -58,8 +58,8 @@ module.exports = {
 		var apiKey = randomstring.generate(24);
 		var apiKeyID = Math.floor(Math.random() * 100000) + 1;
 		return {
-			apiKey: apiKey,
-			apiKeyID: apiKeyID
+			apiKeyID: apiKeyID,
+			apiKey: apiKey
 		};
 	},
 	

@@ -30,13 +30,13 @@ var Promise = require('bluebird');
 var fs = require('fs');
 var requestAsync = Promise.promisify(require('request'));
 
-mockery.registerSubstitute('./channel', './test/support/channel_mock');
+mockery.registerSubstitute('redis', './test/support/redis_mock');
 mockery.enable();
 mockery.warnOnUnregistered(false);
 
 var zoteroAPI = require('../zotero_api');
 var connections = require('../connections');
-var Channel = require('./support/channel_mock');
+var redis = require('./support/redis_mock');
 var WebSocket = require('./support/websocket');
 var assertionCount = require('./support/assertion_count');
 var assert = assertionCount.assert;
@@ -45,8 +45,6 @@ var testUtils = require('./support/test_utils');
 var baseURL = testUtils.baseURL;
 var onEvent = testUtils.onEvent;
 var makeAPIKey = testUtils.makeAPIKey;
-
-var channel = new Channel();
 
 // Start server
 var defer = Promise.defer();
@@ -85,7 +83,7 @@ describe("Streamer Tests:", function () {
 	
 	describe("Notification handler", function () {
 		it('should ignore a topicAdded for an unregistered API key', function () {
-			channel.postMessages({
+			redis.postMessages({
 				event: "topicAdded",
 				apiKeyID: makeAPIKey().apiKeyID,
 				topic: '/users/123456'
@@ -210,7 +208,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to old and new topics
-							channel.postMessages(allTopics.map(function (topic) {
+							redis.postMessages(allTopics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -220,7 +218,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicAdded
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicAdded",
 						apiKeyID: apiKeyID,
 						topic: newTopic
@@ -263,7 +261,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							channel.postMessages(topics.map(function (topic) {
+							redis.postMessages(topics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -278,7 +276,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicRemoved",
 						apiKeyID: apiKeyID,
 						topic: topicToRemove
@@ -390,7 +388,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should trigger
 					// topicUpdated above
-					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					redis.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -446,7 +444,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topic, which should trigger
 					// topicUpdated above
-					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					redis.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -513,7 +511,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should trigger
 					// topicUpdated above
-					channel.postMessages(topics.concat(ignoredTopics).map(function (topic) {
+					redis.postMessages(topics.concat(ignoredTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -588,7 +586,7 @@ describe("Streamer Tests:", function () {
 						});
 					});
 					
-					channel.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
+					redis.postMessages(topics.concat(inaccessibleTopics).map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -636,7 +634,7 @@ describe("Streamer Tests:", function () {
 					
 					// Trigger notification on subscribed topics, which should NOT trigger
 					// topicUpdated above
-					channel.postMessages(topics.map(function (topic) {
+					redis.postMessages(topics.map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -699,7 +697,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Trigger notification on all topics
-					channel.postMessages(allTopics.map(function (topic) {
+					redis.postMessages(allTopics.map(function (topic) {
 						return {
 							event: "topicUpdated",
 							topic: topic
@@ -754,7 +752,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to old and new topics
-							channel.postMessages(allTopics.map(function (topic) {
+							redis.postMessages(allTopics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -764,7 +762,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicAdded
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicAdded",
 						apiKeyID: apiKeyID1,
 						topic: newTopic
@@ -813,7 +811,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							channel.postMessages(topics1.concat(topics2).map(function (topic) {
+							redis.postMessages(topics1.concat(topics2).map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -828,7 +826,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicRemoved",
 						apiKeyID: apiKeyID1,
 						topic: topicToRemove
@@ -867,7 +865,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved on wrong API key
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicRemoved",
 						apiKeyID: apiKeyID2,
 						topic: topicToRemove
@@ -921,7 +919,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							channel.postMessages(topics1.concat(topics2).map(function (topic) {
+							redis.postMessages(topics1.concat(topics2).map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -936,7 +934,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicDeleted",
 						topic: topicToRemove
 					});
@@ -981,7 +979,7 @@ describe("Streamer Tests:", function () {
 							});
 							
 							// Send topicUpdated to all topics
-							channel.postMessages(topics.map(function (topic) {
+							redis.postMessages(topics.map(function (topic) {
 								return {
 									event: "topicUpdated",
 									topic: topic
@@ -996,7 +994,7 @@ describe("Streamer Tests:", function () {
 					});
 					
 					// Send topicRemoved
-					channel.postMessages({
+					redis.postMessages({
 						event: "topicDeleted",
 						topic: topicToRemove
 					});

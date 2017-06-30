@@ -33,20 +33,18 @@ var url = require('url');
 var domain = require('domain');
 var path = require('path');
 var util = require('util');
-var crypto = require('crypto');
 
 var utils = require('./utils');
 var WSError = utils.WSError;
 var log = require('./log');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
-var Channel = require('./channel');
+var redis = require('./redis');
 
 module.exports = function (onInit) {
 	var server;
 	var statusIntervalID;
 	var stopping;
-	var channel;
 	
 	/**
 	 * Handle an SQS notification
@@ -500,55 +498,38 @@ module.exports = function (onInit) {
 			});
 		}
 		
-		//
-		// Init channel
-		//
-		channel = new Channel({
-			redis: config.get('redis')
-		});
-		
-		// When Redis offline queue is deactivated, this event captures errors
-		// emitted when we try to subscribe/unsubscribe on not yet established connection.
-		// Also it prevents the script from exiting when connection error happens,
-		// therefore reconnect can happen.
-		channel.on('error', function (err) {
-			//log.error(err);
-			// TODO: Skip subscribe/unsubscribe errors, but still log other errors.
-		});
-		
-		channel.on('reconnecting', function () {
-			log.trace('Redis is reconnecting');
-		});
-		
-		channel.on('ready', function () {
-			var topics = connections.getTopicsAndKeys();
-			if (!topics.length) return;
+		// 'ready' event is emitted every time when Redis connects.
+		// Each time we have to resubscribe to all topics and keys.
+		redis.on('ready', function () {
+			var channels = connections.getSubscriptions();
+			if (!channels.length) return;
 			
-			// After reconnect, Redis connection resubscribes to all channels by default,
+			// After reconnect, we resubscribe Redis connection to all channels (keys + topics),
 			// but if the channel count is too big, the connection will be blocked
-			// until re-subscription process finishes and the messages from dataserver
-			// will be buffered on redis side. If the buffer size will be exceeded, Redis closes
-			// the connection, then stream-server reconnects and this process repeats indefinitely.
-			// The default automatic re-subscriber is disabled and a custom re-subscriber is
-			// implemented that does pauses between subscription chunks and reduces stress for
-			// Redis and most importantly for stream-server.
-			// It's possible to increase "client-output-buffer-limit pubsub 32mb 8mb 60" both values
-			// to 512mb in /etc/redis/redis.conf
-			var n = 0;
-			(function fn() {
-				var chunk = [];
-				for (var i = 0; i < 10000 && n < topics.length; i++, n++) {
-					var topic = topics[n];
-					chunk.push(topic);
-				}
-				log.trace('Re-subscribing to ' + chunk.join(' '));
-				channel.subscribe(chunk, function (err) {
-					setTimeout(fn, 500);
-				});
-			})();
+			// until the re-subscription process finishes and the messages coming from dataserver
+			// will be buffered on the Redis side. If the buffer size will be exceeded, Redis kills
+			// the connection, then stream-server reconnects and this cycle repeats indefinitely.
+			// If this problem is encountered, increase
+			// "client-output-buffer-limit pubsub 32mb 8mb 60"
+			// memory limits in /etc/redis/redis.conf.
+			// stream-server needs only one connection, therefore
+			// 'client-output-buffer-limit' can be increased to a high number.
+			// This problem is influenced by the dataserver generated
+			// messages per second rate, and depends on how fast the huge subscription command
+			// is sent to redis server and processed.
+			// Another solution could be to subscribe in smaller chunks,
+			// but this would create concurrency conditions with
+			// 'unsubscribe' command used in connections.js.
+			
+			log.info('Resubscribing to ' + channels.length + ' channel(s)');
+			// There is a node_redis bug which is triggered when
+			// the previously documented problem happens.
+			// TODO: Keep track the state of this bug: https://github.com/NodeRedis/node_redis/issues/1230
+			redis.subscribe(channels, function (err) {
+				if (err) return log.error(err);
+				log.info('Resubscribing done');
+			});
 		});
-		
-		connections.setChannel(channel);
 		
 		//
 		// Create the HTTP(S) server
@@ -639,7 +620,7 @@ module.exports = function (onInit) {
 		});
 		
 		// Listen for Redis messages
-		channel.on('message', function (channel, message) {
+		redis.on('message', function (channel, message) {
 			handleNotification(message);
 		});
 	})()

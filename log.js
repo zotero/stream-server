@@ -53,7 +53,9 @@ module.exports = function () {
 		}
 		
 		// Hide keys from the log output
-		msg = msg.replace(/("apiKey":\s*".{3})([^"]+)(")/g, '$1*******$3');
+		if (msg) {
+			msg = msg.toString().replace(/("apiKey":\s*".{3})([^"]+)(")/g, '$1*********************$3');
+		}
 		
 		if (addr) {
 			console.log(date + "[" + addr + "] " + msg);

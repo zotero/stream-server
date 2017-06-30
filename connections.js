@@ -27,6 +27,7 @@ var randomstring = require('randomstring');
 var utils = require('./utils');
 var log = require('./log');
 var statsD = require('./statsd');
+var redis = require('./redis');
 
 module.exports = function () {
 	//
@@ -38,19 +39,18 @@ module.exports = function () {
 	var topicSubscriptions = {};
 	var keySubscriptions = {};
 	var numConnections = 0;
-	var numSubscriptions = 0;
-	var channel = null;
+	var numSubscriptions = 0; // This is only a topic subscriptions number, without keys
 	
 	return {
 		
-		getTopicsAndKeys: function () {
+		getSubscriptions: function () {
 			var topics = Object.keys(topicSubscriptions);
 			var keys = Object.keys(keySubscriptions);
 			return topics.concat(keys);
 		},
 		
-		setChannel: function (c) {
-			channel = c;
+		getNumConnections: function () {
+			return numConnections;
 		},
 		
 		//
@@ -76,7 +76,7 @@ module.exports = function () {
 			
 			var self = this;
 			numConnections++;
-			statsD.gauge('stream-server.connections', numConnections);
+			statsD.gauge('stream-server.' + config.get('hostname') + '.connections', numConnections);
 			
 			var connection = {
 				ws: ws,
@@ -89,7 +89,6 @@ module.exports = function () {
 				attributes: attributes
 			};
 			connections.push(connection);
-			
 			return connection;
 		},
 		
@@ -216,7 +215,7 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this topic is new
 			if (topicSubscriptions[topic].length == 0) {
-				channel.subscribe(topic);
+				redis.subscribe(topic);
 			}
 			topicSubscriptions[topic].push(subscription);
 			
@@ -226,7 +225,7 @@ module.exports = function () {
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
 				this.addKeyMapping(apiKeyID, apiKey);
-				channel.subscribe(apiKeyID);
+				redis.subscribe(apiKeyID);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -258,7 +257,8 @@ module.exports = function () {
 				if (sub.connection == connection && sub.apiKey == apiKey) {
 					topicSubscriptions[topic].splice(i, 1);
 					if (!topicSubscriptions[topic].length) {
-						channel.unsubscribe(topic);
+						delete topicSubscriptions[topic];
+						redis.unsubscribe(topic);
 					}
 					break;
 				}
@@ -269,8 +269,9 @@ module.exports = function () {
 				if (sub.connection == connection && sub.topic == topic) {
 					keySubscriptions[apiKey].splice(i, 1);
 					if (!keySubscriptions[apiKey].length) {
+						delete keySubscriptions[apiKey];
 						this.removeKeyMapping(apiKeyID);
-						channel.unsubscribe(apiKeyID);
+						redis.unsubscribe(apiKeyID);
 					}
 					break;
 				}
@@ -290,7 +291,6 @@ module.exports = function () {
 		 */
 		handleTopicAdded: function (apiKeyID, topic) {
 			var apiKey = this.getKeyByID(apiKeyID);
-			log.info('app ' + apiKey);
 			var conns = this.getAccessTrackingConnections(apiKey);
 			log.info("Sending topicAdded to " + conns.length + " "
 				+ utils.plural("client", conns.length));
@@ -388,7 +388,7 @@ module.exports = function () {
 			clearInterval(conn.keepaliveID);
 			conn.ws.close();
 			numConnections--;
-			statsD.gauge('stream-server.connections', numConnections);
+			statsD.gauge('stream-server.' + config.get('hostname') + '.connections', numConnections);
 			var i = connections.indexOf(conn);
 			connections.splice(i, 1);
 		},
