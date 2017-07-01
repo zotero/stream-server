@@ -45,7 +45,7 @@ module.exports = function () {
 		
 		getSubscriptions: function () {
 			var topics = Object.keys(topicSubscriptions);
-			var keys = Object.keys(keySubscriptions);
+			var keys = Object.keys(keyMap);
 			return topics.concat(keys);
 		},
 		
@@ -215,7 +215,7 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this topic is new
 			if (topicSubscriptions[topic].length == 0) {
-				redis.subscribe(topic);
+				redis.subscribe((config.get('redis').prefix || '') + topic);
 			}
 			topicSubscriptions[topic].push(subscription);
 			
@@ -225,7 +225,7 @@ module.exports = function () {
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
 				this.addKeyMapping(apiKeyID, apiKey);
-				redis.subscribe(apiKeyID);
+				redis.subscribe((config.get('redis').prefix || '') + apiKeyID);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -258,7 +258,7 @@ module.exports = function () {
 					topicSubscriptions[topic].splice(i, 1);
 					if (!topicSubscriptions[topic].length) {
 						delete topicSubscriptions[topic];
-						redis.unsubscribe(topic);
+						redis.unsubscribe((config.get('redis').prefix || '') + topic);
 					}
 					break;
 				}
@@ -271,7 +271,7 @@ module.exports = function () {
 					if (!keySubscriptions[apiKey].length) {
 						delete keySubscriptions[apiKey];
 						this.removeKeyMapping(apiKeyID);
-						redis.unsubscribe(apiKeyID);
+						redis.unsubscribe((config.get('redis').prefix || '') + apiKeyID);
 					}
 					break;
 				}

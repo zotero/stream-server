@@ -501,7 +501,7 @@ module.exports = function (onInit) {
 		// 'ready' event is emitted every time when Redis connects.
 		// Each time we have to resubscribe to all topics and keys.
 		redis.on('ready', function () {
-			var channels = connections.getSubscriptions();
+			let channels = connections.getSubscriptions();
 			if (!channels.length) return;
 			
 			// After reconnect, we resubscribe Redis connection to all channels (keys + topics),
@@ -520,6 +520,13 @@ module.exports = function (onInit) {
 			// Another solution could be to subscribe in smaller chunks,
 			// but this would create concurrency conditions with
 			// 'unsubscribe' command used in connections.js.
+			
+			let prefix = config.get('redis').prefix;
+			if (prefix) {
+				for (let i = 0; i < channels.length; i++) {
+					channels[i] = prefix + channels[i];
+				}
+			}
 			
 			log.info('Resubscribing to ' + channels.length + ' channel(s)');
 			// There is a node_redis bug which is triggered when
