@@ -112,7 +112,7 @@ function startTest() {
 					event: 'topicUpdated',
 					topic: channels[n]
 				};
-				redisClient.publish(channels[n], JSON.stringify(message));
+				redisClient.publish((config.get('redis').prefix || '') + channels[n], JSON.stringify(message));
 			}
 		}, 10);
 	}

@@ -39,7 +39,7 @@ Redis.subscribe = function (channels) {
 	}
 	
 	for (let i = 0; i < channels.length; i++) {
-		let channel = channels[i];
+		let channel = channels[i].toString();
 		if (_channels.indexOf(channel) < 0) {
 			_channels.push(channel);
 		}
@@ -52,7 +52,7 @@ Redis.unsubscribe = function (channels) {
 	}
 	
 	for (let i = 0; i < channels.length; i++) {
-		let channel = channels[i];
+		let channel = channels[i].toString();
 		let n = _channels.indexOf(channel);
 		if (n >= 0) {
 			_channels.splice(n, 1);
@@ -76,9 +76,9 @@ Redis.postMessages = function (messages) {
 		let channel;
 		
 		if (message.apiKeyID) {
-			channel = message.apiKeyID;
+			channel = message.apiKeyID.toString();
 		} else {
-			channel = message.topic;
+			channel = message.topic.toString();
 		}
 		
 		if (_channels.indexOf(channel) >= 0) {
