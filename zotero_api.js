@@ -42,8 +42,8 @@ exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
 	
 	// Get userID and user topic if applicable
 	var options = {
-		url: config.get('apiURL') + 'keys/' + apiKey + '?showid=1',
-		headers: getAPIRequestHeaders()
+		url: config.get('apiURL') + 'keys/current?showid=1',
+		headers: getAPIRequestHeaders(apiKey)
 	}
 	try {
 		var body = yield request(options).spread(function (response, body) {
@@ -54,7 +54,7 @@ exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
 		});
 	}
 	catch (e) {
-		if (e.statusCode == 404) {
+		if (e.statusCode == 403) {
 			throw new utils.WSError(403, "Invalid API key");
 		}
 		else if (e.statusCode) {
