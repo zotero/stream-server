@@ -570,19 +570,6 @@ module.exports = function (onInit) {
 			});
 		}
 		
-		// This is an unfortunate hack to get the real remote IP address passed via the PROXY
-		// protocol rather than the proxy address. proxywrap is supposed to do this, but for some
-		// reason in newer Node versions in https mode the socket we get in the connection
-		// listener isn't the same modified one being passed by proxywrap, so instead we modify
-		// proxywrap to pass the IP address directly, store it here, and access it from the
-		// connection listener.
-		if (proxyProtocol) {
-			var currentIPAddress;
-			server.on('ipAddress', function (ip) {
-				currentIPAddress = ip;
-			});
-		}
-		
 		server.on('error', function (e) {
 			log.error("Server threw error");
 			log.error(e);
@@ -603,8 +590,9 @@ module.exports = function (onInit) {
 				}
 			}
 		});
+		// The remote IP address is only available at connection time in the upgrade request
 		wss.on('connection', function (ws) {
-			ws.remoteAddress = currentIPAddress;
+			ws.remoteAddress = ws.upgradeReq.connection.remoteAddress;
 			handleWebSocketConnection(ws);
 		});
 		
