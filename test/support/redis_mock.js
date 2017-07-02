@@ -76,7 +76,7 @@ Redis.postMessages = function (messages) {
 		let channel;
 		
 		if (message.apiKeyID) {
-			channel = message.apiKeyID.toString();
+			channel = 'api-key:' + message.apiKeyID.toString();
 		} else {
 			channel = message.topic.toString();
 		}
