@@ -89,7 +89,7 @@ module.exports = function (onInit) {
 	/**
 	 * Handle an HTTP incoming request
 	 */
-	function handleHTTPRequest(req, res, ipAddress) {
+	function handleHTTPRequest(req, res) {
 		log.info("Received HTTP request", req);
 		
 		var pathname = url.parse(req.url).pathname;
@@ -555,7 +555,7 @@ module.exports = function (onInit) {
 				cert: fs.readFileSync(config.get('certPath'))
 			};
 			server = https.createServer(options, function (req, res) {
-				handleHTTPRequest(req, res, currentIPAddress);
+				handleHTTPRequest(req, res);
 			})
 		}
 		else {
@@ -566,7 +566,7 @@ module.exports = function (onInit) {
 				var http = require('http');
 			}
 			server = http.createServer(function (req, res) {
-				handleHTTPRequest(req, res, currentIPAddress);
+				handleHTTPRequest(req, res);
 			});
 		}
 		
