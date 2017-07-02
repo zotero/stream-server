@@ -12,9 +12,10 @@ var config = {
 	keepaliveInterval: 25,
 	retryTime: 10,
 	shutdownDelay: 100,
-	awsRegion: 'us-east-1',
-	snsTopic: "",
-	sqsQueuePrefix: "StreamEvents",
+	redis: {
+		host: '',
+		prefix: ''
+	},
 	apiURL: 'https://api.zotero.org/',
 	apiVersion: 3,
 	apiRequestHeaders: {},

@@ -37,12 +37,12 @@ var log = require('./log');
  * @param {String} apiKey
  * @return {String[]} - All topics accessible by the key
  */
-exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
+exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
 	var topics = [];
 	
 	// Get userID and user topic if applicable
 	var options = {
-		url: config.get('apiURL') + 'keys/' + apiKey,
+		url: config.get('apiURL') + 'keys/' + apiKey + '?showid=1',
 		headers: getAPIRequestHeaders()
 	}
 	try {
@@ -92,9 +92,17 @@ exports.getAllKeyTopics = Promise.coroutine(function* (apiKey) {
 	for (let i = 0; i < groups.length; i++) {
 		topics.push('/groups/' + groups[i].id);
 	}
-	return topics;
+	
+	var apiKeyID = data.id;
+	if (!apiKeyID) {
+		throw new Error('No API key ID in /keys/ response');
+	}
+	
+	return {
+		topics: topics,
+		apiKeyID: apiKeyID
+	};
 });
-
 
 /**
  * Check to make sure the given topic is in the list of available topics

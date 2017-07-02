@@ -37,12 +37,11 @@ var util = require('util');
 var utils = require('./utils');
 var WSError = utils.WSError;
 var log = require('./log');
-var queue = require('./queue');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
+var redis = require('./redis');
 
 module.exports = function (onInit) {
-	var queueData;
 	var server;
 	var statusIntervalID;
 	var stopping;
@@ -51,20 +50,16 @@ module.exports = function (onInit) {
 	 * Handle an SQS notification
 	 */
 	function handleNotification(message) {
-		var messageID = message.MessageId;
-		var receiptHandle = message.ReceiptHandle;
-		var json = JSON.parse(message.Body);
-		if (!json) {
-			log.error("Error parsing outer message: " + message.Body);
+		log.trace(message);
+		try {
+			var data = JSON.parse(message);
+		}
+		catch (e) {
+			log.error("Error parsing message: " + message);
 			return;
 		}
-		log.trace(json.Message);
-		var data = JSON.parse(json.Message);
-		if (!data) {
-			log.error("Error parsing inner message: " + json.Message);
-		}
 		
-		var apiKey = data.apiKey;
+		var apiKeyID = data.apiKeyID;
 		var topic = data.topic;
 		var event = data.event;
 		
@@ -77,11 +72,11 @@ module.exports = function (onInit) {
 			break;
 		
 		case 'topicAdded':
-			connections.handleTopicAdded(apiKey, topic);
+			connections.handleTopicAdded(apiKeyID, topic);
 			break;
 			
 		case 'topicRemoved':
-			connections.handleTopicRemoved(apiKey, topic);
+			connections.handleTopicRemoved(apiKeyID, topic);
 			break;
 		
 		case 'topicDeleted':
@@ -131,8 +126,9 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				let topics = yield zoteroAPI.getAllKeyTopics(apiKey);
+				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 				var keyTopics = {
+					apiKeyID: apiKeyID,
 					apiKey: apiKey,
 					topics: topics
 				};
@@ -154,7 +150,7 @@ module.exports = function (onInit) {
 			if (keyTopics) {
 				for (let i = 0; i < keyTopics.topics.length; i++) {
 					let topic = keyTopics.topics[i];
-					connections.addSubscription(connection, keyTopics.apiKey, topic);
+					connections.addSubscription(connection, keyTopics.apiKeyID, keyTopics.apiKey, topic);
 				}
 			}
 			
@@ -271,7 +267,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				var availableTopics = yield zoteroAPI.getAllKeyTopics(apiKey);
+				var {topics: availableTopics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 			}
 			else if (!topics) {
 				throw new WSError(400, "Either 'apiKey' or 'topics' must be provided");
@@ -290,6 +286,7 @@ module.exports = function (onInit) {
 						if (hasAccess) {
 							if (!successful[apiKey]) {
 								successful[apiKey] = {
+									apiKeyID: apiKeyID,
 									accessTracking: false,
 									topics: []
 								};
@@ -332,6 +329,7 @@ module.exports = function (onInit) {
 			// If no topics provided, use all of the key's available topics
 			else {
 				successful[apiKey] = {
+					apiKeyID: apiKeyID,
 					accessTracking: true,
 					topics: availableTopics
 				}
@@ -346,7 +344,7 @@ module.exports = function (onInit) {
 			}
 			let topics = keySubs.topics;
 			for (let j = 0; j < topics.length; j++) {
-				connections.addSubscription(connection, apiKey, topics[j]);
+				connections.addSubscription(connection, keySubs.apiKeyID, apiKey, topics[j]);
 			}
 		}
 		
@@ -458,15 +456,6 @@ module.exports = function (onInit) {
 				clearTimeout(statusIntervalID);
 			}
 			
-			if (queueData) {
-				try {
-					yield queue.terminate(queueData);
-				}
-				catch (e) {
-					log.error(e);
-				}
-			}
-			
 			var shutdownDelay = config.get('shutdownDelay');
 			log.info("Waiting " + (shutdownDelay / 1000) + " seconds before exiting");
 			yield Promise.delay(shutdownDelay)
@@ -474,7 +463,6 @@ module.exports = function (onInit) {
 			process.exit(err ? 1 : 0);
 		})();
 	}
-	
 	
 	//
 	//
@@ -485,9 +473,6 @@ module.exports = function (onInit) {
 	//
 	return Promise.coroutine(function* () {
 		log.info("Starting up [pid: " + process.pid + "]");
-		
-		queueData = yield queue.create();
-		var queueURL = queueData.queueURL;
 		
 		if (process.env.NODE_ENV != 'test') {
 			process.on('SIGTERM', function () {
@@ -512,6 +497,46 @@ module.exports = function (onInit) {
 				shutdown();
 			});
 		}
+		
+		// 'ready' event is emitted every time when Redis connects.
+		// Each time we have to resubscribe to all topics and keys.
+		redis.on('ready', function () {
+			let channels = connections.getSubscriptions();
+			if (!channels.length) return;
+			
+			// After reconnect, we resubscribe Redis connection to all channels (keys + topics),
+			// but if the channel count is too big, the connection will be blocked
+			// until the re-subscription process finishes and the messages coming from dataserver
+			// will be buffered on the Redis side. If the buffer size will be exceeded, Redis kills
+			// the connection, then stream-server reconnects and this cycle repeats indefinitely.
+			// If this problem is encountered, increase
+			// "client-output-buffer-limit pubsub 32mb 8mb 60"
+			// memory limits in /etc/redis/redis.conf.
+			// stream-server needs only one connection, therefore
+			// 'client-output-buffer-limit' can be increased to a high number.
+			// This problem is influenced by the dataserver generated
+			// messages per second rate, and depends on how fast the huge subscription command
+			// is sent to redis server and processed.
+			// Another solution could be to subscribe in smaller chunks,
+			// but this would create concurrency conditions with
+			// 'unsubscribe' command used in connections.js.
+			
+			let prefix = config.get('redis').prefix;
+			if (prefix) {
+				for (let i = 0; i < channels.length; i++) {
+					channels[i] = prefix + channels[i];
+				}
+			}
+			
+			log.info('Resubscribing to ' + channels.length + ' channel(s)');
+			// There is a node_redis bug which is triggered when
+			// the previously documented problem happens.
+			// TODO: Keep track the state of this bug: https://github.com/NodeRedis/node_redis/issues/1230
+			redis.subscribe(channels, function (err) {
+				if (err) return log.error(err);
+				log.info('Resubscribing done');
+			});
+		});
 		
 		//
 		// Create the HTTP(S) server
@@ -601,28 +626,10 @@ module.exports = function (onInit) {
 			}
 		});
 		
-		// Connect to SQS queue
-		while (true) {
-			if (stopping) {
-				break;
-			}
-			log.info("Getting messages from queue");
-			let messages = yield queue.receiveMessages(queueURL);
-			if (messages) {
-				log.info("Received " + messages.length + " "
-					+ utils.plural('message', messages.length) + " from queue");
-				for (let i = 0; i < messages.length; i++) {
-					let message = messages[i];
-					handleNotification(message);
-				}
-				let results = yield queue.deleteMessages(queueURL, messages);
-				log.info(
-					"Deleted " + results.successful + " " + utils.plural('message', results.successful)
-					+ (results.failed ? " (" + results.failed + " failed)" : "")
-					+ " from queue"
-				);
-			}
-		}
+		// Listen for Redis messages
+		redis.on('message', function (channel, message) {
+			handleNotification(message);
+		});
 	})()
 	.catch(function (e) {
 		log.error("Caught error");

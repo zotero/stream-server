@@ -27,62 +27,81 @@ var randomstring = require('randomstring');
 var utils = require('./utils');
 var log = require('./log');
 var statsD = require('./statsd');
+var redis = require('./redis');
 
 module.exports = function () {
 	//
 	// Subscription management
 	//
 	// A subscription is a connection, API key, and topic combination
-	var connections = {};
+	var keyMap = {};
+	var connections = [];
 	var topicSubscriptions = {};
 	var keySubscriptions = {};
 	var numConnections = 0;
-	var numSubscriptions = 0;
-	
+	var numSubscriptions = 0; // This is only a topic subscriptions number, without keys
 	
 	return {
+		
+		getSubscriptions: function () {
+			var topics = Object.keys(topicSubscriptions);
+			var keys = Object.keys(keyMap);
+			return topics.concat(keys);
+		},
+		
+		getNumConnections: function () {
+			return numConnections;
+		},
+		
+		//
+		// Key mappings
+		//
+		addKeyMapping: function (apiKeyID, apiKey) {
+			keyMap[apiKeyID] = apiKey;
+		},
+		
+		removeKeyMapping: function (apiKeyID) {
+			delete keyMap[apiKeyID];
+		},
+		
+		getKeyByID: function (apiKeyID) {
+			return keyMap[apiKeyID];
+		},
+		
 		//
 		// Connection methods
 		//
 		registerConnection: function (ws, attributes) {
 			attributes = attributes || {};
 			
-			var idLength = 6;
-			do {
-				var connectionID = randomstring.generate(idLength);
-			}
-			while (connectionID in connections);
-			
 			var self = this;
 			numConnections++;
-			statsD.gauge('stream-server.connections', numConnections);
+			statsD.gauge('stream-server.' + config.get('hostname') + '.connections', numConnections);
 			
-			return connections[connectionID] = {
-				id: connectionID,
+			var connection = {
 				ws: ws,
 				remoteAddress: ws.remoteAddress,
 				subscriptions: [],
 				accessTracking: {},
 				keepaliveID: setInterval(function () {
-					self.keepalive(connections[connectionID]);
+					self.keepalive(connection);
 				}, config.get('keepaliveInterval') * 1000),
 				attributes: attributes
 			};
+			connections.push(connection);
+			return connection;
 		},
 		
 		//
 		// Lookup
 		//
-		getConnectionByID: function (connectionID) {
-			return connections[connectionID] || false;
-		},
-		
 		getConnectionByWebSocket: function (ws) {
-			for (let id in connections) {
-				if (connections[id].ws == ws) {
-					return connections[id];
+			for (var i = 0; i < connections.length; i++) {
+				if (connections[i].ws == ws) {
+					return connections[i];
 				}
 			}
+			return null;
 		},
 		
 		/**
@@ -124,7 +143,7 @@ module.exports = function () {
 		countUniqueConnectionsInSubscriptions: function (subscriptions) {
 			var connIDs = new Set;
 			for (let i = 0; i < subscriptions.length; i++) {
-				connIDs.add(subscriptions[i].connection.id);
+				connIDs.add(subscriptions[i].connection);
 			}
 			return connIDs.size;
 		},
@@ -152,22 +171,22 @@ module.exports = function () {
 		getAccessTrackingConnections: function (apiKey) {
 			if (!keySubscriptions[apiKey]) return [];
 			
-			let connectionIDs = {};
+			let filteredConnections = [];
 			for (let i = 0; i < keySubscriptions[apiKey].length; i++) {
 				let connection = keySubscriptions[apiKey][i].connection;
 				if (this.getAccessTracking(connection, apiKey)) {
-					connectionIDs[connection.id] = true;
+					if (filteredConnections.indexOf(connection) < 0) {
+						filteredConnections.push(connection);
+					}
 				}
 			}
-			return Object.keys(connectionIDs).map(function (id) {
-				return this.getConnectionByID(id);
-			}.bind(this));
+			return filteredConnections;
 		},
 		
 		//
 		// Subscription management
 		//
-		addSubscription: function (connection, apiKey, topic) {
+		addSubscription: function (connection, apiKeyID, apiKey, topic) {
 			if (!topicSubscriptions[topic]) {
 				topicSubscriptions[topic] = [];
 			}
@@ -185,17 +204,28 @@ module.exports = function () {
 			
 			var subscription = {
 				connection: connection,
+				apiKeyID: apiKeyID,
 				apiKey: apiKey,
 				topic: topic
 			};
 			
-			connections[connection.id].subscriptions.push(subscription);
+			connection.subscriptions.push(subscription);
 			if (!topicSubscriptions[topic]) {
 				topicSubscriptions[topic] = [];
 			}
+			// Subscribe to redis channel if this topic is new
+			if (topicSubscriptions[topic].length == 0) {
+				redis.subscribe((config.get('redis').prefix || '') + topic);
+			}
 			topicSubscriptions[topic].push(subscription);
+			
 			if (!keySubscriptions[apiKey]) {
 				keySubscriptions[apiKey] = [];
+			}
+			// Subscribe to redis channel if this apiKey is new
+			if (keySubscriptions[apiKey].length == 0) {
+				this.addKeyMapping(apiKeyID, apiKey);
+				redis.subscribe((config.get('redis').prefix || '') + apiKeyID);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
@@ -204,6 +234,7 @@ module.exports = function () {
 		
 		removeSubscription: function (subscription) {
 			var connection = subscription.connection;
+			var apiKeyID = subscription.apiKeyID;
 			var apiKey = subscription.apiKey;
 			var topic = subscription.topic;
 			
@@ -225,6 +256,10 @@ module.exports = function () {
 				let sub = topicSubscriptions[topic][i];
 				if (sub.connection == connection && sub.apiKey == apiKey) {
 					topicSubscriptions[topic].splice(i, 1);
+					if (!topicSubscriptions[topic].length) {
+						delete topicSubscriptions[topic];
+						redis.unsubscribe((config.get('redis').prefix || '') + topic);
+					}
 					break;
 				}
 			}
@@ -233,6 +268,11 @@ module.exports = function () {
 				let sub = keySubscriptions[apiKey][i];
 				if (sub.connection == connection && sub.topic == topic) {
 					keySubscriptions[apiKey].splice(i, 1);
+					if (!keySubscriptions[apiKey].length) {
+						delete keySubscriptions[apiKey];
+						this.removeKeyMapping(apiKeyID);
+						redis.unsubscribe((config.get('redis').prefix || '') + apiKeyID);
+					}
 					break;
 				}
 			}
@@ -249,7 +289,8 @@ module.exports = function () {
 		 * This sends a topicAdded event to each connection where the API key
 		 * is in access-tracking mode and then adds the subscription.
 		 */
-		handleTopicAdded: function (apiKey, topic) {
+		handleTopicAdded: function (apiKeyID, topic) {
+			var apiKey = this.getKeyByID(apiKeyID);
 			var conns = this.getAccessTrackingConnections(apiKey);
 			log.info("Sending topicAdded to " + conns.length + " "
 				+ utils.plural("client", conns.length));
@@ -260,7 +301,7 @@ module.exports = function () {
 					apiKey: conn.attributes.singleKey ? undefined : apiKey,
 					topic: topic
 				});
-				this.addSubscription(conn, apiKey, topic);
+				this.addSubscription(conn, apiKeyID, apiKey, topic);
 			}
 		},
 		
@@ -270,7 +311,8 @@ module.exports = function () {
 		 * Deletes the subscription with the given API key and topic and then
 		 * sends out a topicRemoved for each one.
 		 */
-		handleTopicRemoved: function (apiKey, topic) {
+		handleTopicRemoved: function (apiKeyID, topic) {
+			var apiKey = this.getKeyByID(apiKeyID);
 			var subs = this.getSubscriptionsByKeyAndTopic(apiKey, topic);
 			this.deleteAndNotifySubscriptions(subs);
 		},
@@ -344,10 +386,11 @@ module.exports = function () {
 		closeConnection: function (conn) {
 			log.info("Closing connection", conn);
 			clearInterval(conn.keepaliveID);
-			conn.ws.close()
+			conn.ws.close();
 			numConnections--;
-			statsD.gauge('stream-server.connections', numConnections);
-			delete connections[conn.id];
+			statsD.gauge('stream-server.' + config.get('hostname') + '.connections', numConnections);
+			var i = connections.indexOf(conn);
+			connections.splice(i, 1);
 		},
 		
 		deregisterConnectionByWebSocket: function (ws) {
@@ -361,10 +404,9 @@ module.exports = function () {
 		
 		deregisterAllConnections: function () {
 			log.info("Closing all connections");
-			Object.keys(connections).forEach(function (id) {
-				this.deregisterConnection(connections[id]);
-				
-			}.bind(this));
+			for (var i = 0; i < connections.length; i++) {
+				this.deregisterConnection(connections[i]);
+			}
 		},
 		
 		

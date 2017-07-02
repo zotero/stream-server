@@ -1,4 +1,7 @@
 {
 	"logLevel": "trace",
-	"httpPort": 18050
+	"httpPort": 18050,
+	"redis": {
+		"prefix": ""
+	}
 }

@@ -5,28 +5,29 @@
 	"author": "Dan Stillman <dstillman@zotero.org>",
 	"scripts": {
 		"start": "node index.js",
-		"test": "NODE_ENV=test ./node_modules/mocha/bin/mocha"
+		"test": "NODE_ENV=test ./node_modules/mocha/bin/mocha",
+		"benchmark": "NODE_ENV=benchmark node ./test/other/benchmark.js"
 	},
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/zotero/stream-server"
 	},
 	"dependencies": {
-		"aws-sdk": "^2.79.0",
 		"bluebird": "^2.11.0",
 		"config": "^1.1.0",
 		"findhit-proxywrap": "^0.3.12",
 		"node-statsd": "^0.1.1",
 		"randomstring": "^1.0.3",
+		"redis": "^2.7.1",
 		"request": "^2.51.0",
 		"strftime": "^0.10.0",
 		"uws": "^8.14.0"
 	},
 	"devDependencies": {
+		"chai": "^1.10.0",
 		"mocha": "^2.1.0",
 		"mockery": "^1.4.0",
-		"chai": "^1.10.0",
-		"sinon": "^1.12.2",
+		"sinon": "^2.3.6",
 		"ws": "^3.0.0"
 	},
 	"engines": {
