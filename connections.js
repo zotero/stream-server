@@ -238,7 +238,7 @@ module.exports = function () {
 			var apiKey = subscription.apiKey;
 			var topic = subscription.topic;
 			
-			log.info("Removing subscription for " + topic);
+			log.info("Removing subscription for " + topic, connection);
 			var removed = false;
 			
 			this.disableAccessTracking(connection, apiKey);

@@ -167,7 +167,7 @@ module.exports = function (onInit) {
 			});
 			
 			ws.on('close', function () {
-				log.info("WebSocket connection was closed");
+				log.info("WebSocket connection was closed", ws);
 				var closed = connections.deregisterConnectionByWebSocket(ws);
 				if (!closed) {
 					log.warn("Connection not found", ws);
