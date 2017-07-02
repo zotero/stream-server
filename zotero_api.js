@@ -58,10 +58,10 @@ exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
 			throw new utils.WSError(403, "Invalid API key");
 		}
 		else if (e.statusCode) {
-			throw new utils.WSError(e.statusCode, e.body);
+			throw new utils.WSError(e.statusCode, e.body ? e.body : "Error getting key info");
 		}
 		else {
-			throw new Error("Error getting key permissions: " + e);
+			throw new Error("Error getting key info: " + e);
 		}
 	}
 	
