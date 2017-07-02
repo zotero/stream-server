@@ -1,4 +1,4 @@
 {
-  "logLevel": "error",
-  "httpPort": 18050
+	"logLevel": "error",
+	"httpPort": 18050
 }
