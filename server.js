@@ -45,7 +45,10 @@ module.exports = function (onInit) {
 	var server;
 	var statusIntervalID;
 	var stopping;
-	
+	var globalTopics = [
+		'styles',
+		'notifications'
+	];
 	/**
 	 * Handle an SQS notification
 	 */
@@ -65,10 +68,19 @@ module.exports = function (onInit) {
 		
 		switch (data.event) {
 		case 'topicUpdated':
-			connections.sendEventForTopic(topic, event, {
-				topic: topic,
-				version: data.version
-			});
+			if (globalTopics.indexOf(topic) >= 0) {
+				setTimeout(function () {
+					connections.sendEventForTopic(topic, event, {
+						topic: topic,
+						version: data.version
+					});
+				}, 30000);
+			} else {
+				connections.sendEventForTopic(topic, event, {
+					topic: topic,
+					version: data.version
+				});
+			}
 			break;
 		
 		case 'topicAdded':
@@ -127,6 +139,8 @@ module.exports = function (onInit) {
 			
 			if (apiKey) {
 				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				// Append global topics to key's allowed topic list
+				topics = topics.concat(globalTopics);
 				var keyTopics = {
 					apiKeyID: apiKeyID,
 					apiKey: apiKey,
@@ -277,6 +291,17 @@ module.exports = function (onInit) {
 			if (topics && topics.length) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
+					// Allow global topics
+					if (globalTopics.indexOf(topic) >= 0) {
+						if (!successful.public) {
+							successful.public = {
+								accessTracking: false,
+								topics: []
+							};
+						}
+						successful.public.topics.push(topic);
+						continue;
+					}
 					if (topic[0] != '/') {
 						throw new WSError(400, "Topic must begin with a slash ('" + topic + "' provided)");
 					}
