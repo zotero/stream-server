@@ -45,6 +45,11 @@ module.exports = function (onInit) {
 	var server;
 	var statusIntervalID;
 	var stopping;
+	var globalTopics = [
+		'styles',
+		'translators'
+	];
+	var globalTopicsDelay = 30 * 1000;
 	
 	/**
 	 * Handle an SQS notification
@@ -65,10 +70,18 @@ module.exports = function (onInit) {
 		
 		switch (data.event) {
 		case 'topicUpdated':
-			connections.sendEventForTopic(topic, event, {
-				topic: topic,
-				version: data.version
-			});
+			if (globalTopics.includes(topic)) {
+				setTimeout(function () {
+					connections.sendEventForTopic(topic, event, {
+						topic: topic
+					});
+				}, globalTopicsDelay);
+			} else {
+				connections.sendEventForTopic(topic, event, {
+					topic: topic,
+					version: data.version
+				});
+			}
 			break;
 		
 		case 'topicAdded':
@@ -127,6 +140,8 @@ module.exports = function (onInit) {
 			
 			if (apiKey) {
 				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				// Append global topics to key's allowed topic list
+				topics = topics.concat(globalTopics);
 				var keyTopics = {
 					apiKeyID: apiKeyID,
 					apiKey: apiKey,
@@ -277,6 +292,17 @@ module.exports = function (onInit) {
 			if (topics && topics.length) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
+					// Allow global topics
+					if (globalTopics.includes(topic)) {
+						if (!successful.public) {
+							successful.public = {
+								accessTracking: false,
+								topics: []
+							};
+						}
+						successful.public.topics.push(topic);
+						continue;
+					}
 					if (topic[0] != '/') {
 						throw new WSError(400, "Topic must begin with a slash ('" + topic + "' provided)");
 					}
@@ -395,17 +421,25 @@ module.exports = function (onInit) {
 		var removedSubscriptions = [];
 		for (let i = 0; i < data.subscriptions.length; i++) {
 			let sub = data.subscriptions[i];
-			if (sub.apiKey === undefined) {
-				throw new WSError(400, "'apiKey' not provided");
-			}
 			if (sub.topic && typeof sub.topic != 'string') {
 				throw new WSError(400, "'topic' must be a string");
 			}
 			
-			let topics = connections.removeConnectionSubscriptionsByKeyAndTopic(
-				connection, sub.apiKey, sub.topic
-			);
-			if (topics) {
+			let topics = [];
+			if (sub.apiKey) {
+				topics = connections.removeConnectionSubscriptionsByKeyAndTopic(
+					connection, sub.apiKey, sub.topic
+				);
+			} else {
+				let removed = connections.removeConnectionSubscriptionByTopic(
+					connection, sub.topic
+				);
+				if (removed) {
+					topics = [sub.topic];
+				}
+			}
+			
+			if (topics.length) {
 				removedSubscriptions.push({
 					apiKey: sub.apiKey,
 					topics

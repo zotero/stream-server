@@ -131,6 +131,8 @@ describe("Streamer Tests:", function () {
 		it('should include all accessible topics', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
+			var globalTopics = ['styles', 'translators'];
+			var allTopics = topics.concat(globalTopics);
 			
 			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
@@ -143,8 +145,8 @@ describe("Streamer Tests:", function () {
 					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(fields.topics, 'array');
-					assert.lengthOf(fields.topics, topics.length);
-					assert.sameMembers(fields.topics, topics);
+					assert.lengthOf(fields.topics, allTopics.length);
+					assert.sameMembers(fields.topics, allTopics);
 					done();
 				});
 			});
@@ -153,6 +155,8 @@ describe("Streamer Tests:", function () {
 		it('should accept keys via Zotero-API-Key', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
+			var globalTopics = ['styles', 'translators'];
+			var allTopics = topics.concat(globalTopics);
 			
 			sinon.stub(zoteroAPI, 'getKeyInfo')
 				.withArgs(apiKey)
@@ -165,8 +169,8 @@ describe("Streamer Tests:", function () {
 					zoteroAPI.getKeyInfo.restore();
 					
 					assert.typeOf(fields.topics, 'array');
-					assert.lengthOf(fields.topics, topics.length);
-					assert.sameMembers(fields.topics, topics);
+					assert.lengthOf(fields.topics, allTopics.length);
+					assert.sameMembers(fields.topics, allTopics);
 					done();
 				});
 			});
@@ -521,6 +525,58 @@ describe("Streamer Tests:", function () {
 			})
 		});
 		
+		it("should add provided global subscriptions", function (done) {
+			expect(6);
+			
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function*(fields) {
+					var topics = ['styles', 'translators'];
+					
+					// Add a subscription
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							{
+								topics: topics
+							}
+						]
+					}, 'subscriptionsCreated');
+					
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.isUndefined(response.subscriptions[0].apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, topics);
+					
+					var clock = sinon.useFakeTimers();
+					
+					// Listen for update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
+								clock.restore();
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
+					});
+					
+					// Trigger notification on subscribed topics, which should trigger
+					// topicUpdated above
+					redis.postMessages(topics.map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+					
+					clock.tick(30 * 1000);
+				}));
+			})
+		});
+		
 		it("should ignore inaccessible subscriptions in add requests", function (done) {
 			expect(13);
 			
@@ -694,6 +750,65 @@ describe("Streamer Tests:", function () {
 					ws.on('message', function (data) {
 						onEvent(data, 'topicUpdated', function (fields) {
 							assert.equal(fields.topic, allTopics[topicUpdatedCalled]).done(function () {
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
+					});
+					
+					// Trigger notification on all topics
+					redis.postMessages(allTopics.map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
+			})
+		})
+		
+		it("should delete public and global topics", function (done) {
+			expect(3);
+			
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function*(fields) {
+					var topicsToKeep = ['/users/234567'];
+					var topicsToDelete = ['/users/123456', 'translators'];
+					var allTopics = topicsToKeep.concat(topicsToDelete);
+					
+					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
+					for (let i = 0; i < allTopics.length; i++) {
+						stub.withArgs(allTopics[i]).returns(Promise.resolve(true));
+					}
+					
+					// Add subscriptions
+					yield testUtils.addSubscriptions(ws, null, allTopics);
+					
+					stub.restore();
+					
+					// Delete subscriptions
+					var response = yield ws.send({
+						action: 'deleteSubscriptions',
+						subscriptions: [
+							{
+								topic: topicsToDelete[0]
+							},
+							{
+								topic: topicsToDelete[1]
+							}
+						]
+					}, 'subscriptionsDeleted');
+					
+					assert.equal(response.subscriptions[0].topics[0], topicsToDelete[0]);
+					assert.equal(response.subscriptions[1].topics[0], topicsToDelete[1]);
+					
+					// Listen for update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topicsToKeep[topicUpdatedCalled]).done(function () {
 								ws.end();
 								done();
 							});
