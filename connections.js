@@ -363,11 +363,11 @@ module.exports = function () {
 		 *
 		 * @param {String} apiKey
 		 * @param {String} [topic=false]
-		 * @return {Integer} - Number of subscriptions removed
+		 * @return {String[]|false} - An array of removed topics, or false if no subscription for key
 		 */
 		removeConnectionSubscriptionsByKeyAndTopic: function (connection, apiKey, topic) {
 			if (!keySubscriptions[apiKey]) {
-				return 0;
+				return false;
 			}
 			var subs = this.getSubscriptionsByKeyAndTopic(apiKey, topic).filter(function (sub) {
 				return sub.connection == connection;
@@ -375,7 +375,7 @@ module.exports = function () {
 			for (var i = 0; i < subs.length; i++) {
 				this.removeSubscription(subs[i]);
 			}
-			return subs.length;
+			return subs.map(sub => sub.topic);
 		},
 		
 		deregisterConnection: function (conn) {

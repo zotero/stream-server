@@ -392,7 +392,7 @@ module.exports = function (onInit) {
 			throw new WSError(400, "'subscriptions' array is empty");
 		}
 		
-		var numRemoved = 0;
+		var removedSubscriptions = [];
 		for (let i = 0; i < data.subscriptions.length; i++) {
 			let sub = data.subscriptions[i];
 			if (sub.apiKey === undefined) {
@@ -402,20 +402,26 @@ module.exports = function (onInit) {
 				throw new WSError(400, "'topic' must be a string");
 			}
 			
-			numRemoved += connections.removeConnectionSubscriptionsByKeyAndTopic(
+			let topics = connections.removeConnectionSubscriptionsByKeyAndTopic(
 				connection, sub.apiKey, sub.topic
 			);
+			if (topics) {
+				removedSubscriptions.push({
+					apiKey: sub.apiKey,
+					topics
+				});
+			}
 		}
 		
-		if (numRemoved) {
-			log.info("Deleted " + numRemoved + " "
-				+ utils.plural("subscription", numRemoved), connection);
+		if (removedSubscriptions.length) {
+			log.info("Deleted " + removedSubscriptions.length + " "
+				+ utils.plural("subscription", removedSubscriptions.length), connection);
 		}
 		else {
 			throw new WSError(409, "No matching subscription");
 		}
 		
-		connections.sendEvent(connection, 'subscriptionsDeleted', {});
+		connections.sendEvent(connection, 'subscriptionsDeleted', { subscriptions: removedSubscriptions });
 	}
 	
 	function handleError(ws, e) {

@@ -624,6 +624,11 @@ describe("Streamer Tests:", function () {
 						}]
 					}, 'subscriptionsDeleted');
 					
+					assert.property(response, 'subscriptions');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.propertyVal(response.subscriptions[0], 'apiKey', apiKey);
+					assert.lengthOf(response.subscriptions[0].topics, topics.length);
+					
 					ws.on('message', function (data) {
 						// Listen for update notifications
 						onEvent(data, 'topicUpdated', function (fields) {
