@@ -42,14 +42,15 @@ var zoteroAPI = require('./zotero_api');
 var redis = require('./redis');
 
 module.exports = function (onInit) {
-	var server;
-	var statusIntervalID;
-	var stopping;
-	var globalTopics = [
+	const GLOBAL_TOPICS = [
 		'styles',
 		'translators'
 	];
-	var globalTopicsDelay = 30 * 1000;
+	const GLOBAL_TOPICS_DELAY = 5 * 1000;
+	
+	var server;
+	var statusIntervalID;
+	var stopping;
 	
 	/**
 	 * Handle an SQS notification
@@ -70,12 +71,14 @@ module.exports = function (onInit) {
 		
 		switch (data.event) {
 		case 'topicUpdated':
-			if (globalTopics.includes(topic)) {
+			if (GLOBAL_TOPICS.includes(topic)) {
+				log.info(`Received topicUpdated for ${topic} -- `
+					+ `sending in ${GLOBAL_TOPICS_DELAY} seconds`);
 				setTimeout(function () {
 					connections.sendEventForTopic(topic, event, {
 						topic: topic
 					});
-				}, globalTopicsDelay);
+				}, GLOBAL_TOPICS_DELAY);
 			} else {
 				connections.sendEventForTopic(topic, event, {
 					topic: topic,
@@ -141,7 +144,7 @@ module.exports = function (onInit) {
 			if (apiKey) {
 				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 				// Append global topics to key's allowed topic list
-				topics = topics.concat(globalTopics);
+				topics = topics.concat(GLOBAL_TOPICS);
 				var keyTopics = {
 					apiKeyID: apiKeyID,
 					apiKey: apiKey,
@@ -293,7 +296,7 @@ module.exports = function (onInit) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
 					// Allow global topics
-					if (globalTopics.includes(topic)) {
+					if (GLOBAL_TOPICS.includes(topic)) {
 						if (!successful.public) {
 							successful.public = {
 								accessTracking: false,
