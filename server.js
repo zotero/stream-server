@@ -47,8 +47,10 @@ module.exports = function (onInit) {
 	var stopping;
 	var globalTopics = [
 		'styles',
-		'notifications'
+		'translators'
 	];
+	var globalTopicsDelay = 30 * 1000;
+	
 	/**
 	 * Handle an SQS notification
 	 */
@@ -68,13 +70,12 @@ module.exports = function (onInit) {
 		
 		switch (data.event) {
 		case 'topicUpdated':
-			if (globalTopics.indexOf(topic) >= 0) {
+			if (globalTopics.includes(topic)) {
 				setTimeout(function () {
 					connections.sendEventForTopic(topic, event, {
-						topic: topic,
-						version: data.version
+						topic: topic
 					});
-				}, 30000);
+				}, globalTopicsDelay);
 			} else {
 				connections.sendEventForTopic(topic, event, {
 					topic: topic,
@@ -292,7 +293,7 @@ module.exports = function (onInit) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
 					// Allow global topics
-					if (globalTopics.indexOf(topic) >= 0) {
+					if (globalTopics.includes(topic)) {
 						if (!successful.public) {
 							successful.public = {
 								accessTracking: false,
