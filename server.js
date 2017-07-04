@@ -46,7 +46,12 @@ module.exports = function (onInit) {
 		'styles',
 		'translators'
 	];
-	const GLOBAL_TOPICS_DELAY = 5 * 1000;
+	// Minimum delay before clients should act on global topic notifications -- since these are triggered
+	// by webhooks or other queued notifications, they need time to be processed elsewhere
+	const GLOBAL_TOPICS_MIN_DELAY = 30 * 1000;
+	// Notification action period -- clients are given a randomly chosen delay within this time
+	// period before they should act upon the notification, so that we don't DDoS ourselves
+	const GLOBAL_TOPICS_DELAY_PERIOD = 60 * 1000;
 	
 	var server;
 	var statusIntervalID;
@@ -72,13 +77,12 @@ module.exports = function (onInit) {
 		switch (data.event) {
 		case 'topicUpdated':
 			if (GLOBAL_TOPICS.includes(topic)) {
-				log.info(`Received topicUpdated for ${topic} -- `
-					+ `sending in ${GLOBAL_TOPICS_DELAY} seconds`);
-				setTimeout(function () {
-					connections.sendEventForTopic(topic, event, {
-						topic: topic
-					});
-				}, GLOBAL_TOPICS_DELAY);
+				let min = GLOBAL_TOPICS_MIN_DELAY;
+				let max = GLOBAL_TOPICS_MIN_DELAY + GLOBAL_TOPICS_DELAY_PERIOD;
+				connections.sendEventForTopic(topic, event, {
+					topic: topic,
+					delay: Math.floor(Math.random() * (max - min + 1)) + min
+				});
 			} else {
 				connections.sendEventForTopic(topic, event, {
 					topic: topic,
