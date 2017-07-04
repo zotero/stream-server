@@ -768,6 +768,65 @@ describe("Streamer Tests:", function () {
 			})
 		})
 		
+		it("should delete public and global topics", function (done) {
+			expect(3);
+			
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function*(fields) {
+					var topicsToKeep = ['/users/234567'];
+					var topicsToDelete = ['/users/123456', 'translators'];
+					var allTopics = topicsToKeep.concat(topicsToDelete);
+					
+					var stub = sinon.stub(zoteroAPI, 'checkPublicTopicAccess');
+					for (let i = 0; i < allTopics.length; i++) {
+						stub.withArgs(allTopics[i]).returns(Promise.resolve(true));
+					}
+					
+					// Add subscriptions
+					yield testUtils.addSubscriptions(ws, null, allTopics);
+					
+					stub.restore();
+					
+					// Delete subscriptions
+					var response = yield ws.send({
+						action: 'deleteSubscriptions',
+						subscriptions: [
+							{
+								topic: topicsToDelete[0]
+							},
+							{
+								topic: topicsToDelete[1]
+							}
+						]
+					}, 'subscriptionsDeleted');
+					
+					assert.equal(response.subscriptions[0].topics[0], topicsToDelete[0]);
+					assert.equal(response.subscriptions[1].topics[0], topicsToDelete[1]);
+					
+					// Listen for update notifications
+					var topicUpdatedCalled = 0;
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topicsToKeep[topicUpdatedCalled]).done(function () {
+								ws.end();
+								done();
+							});
+							topicUpdatedCalled++;
+						});
+					});
+					
+					// Trigger notification on all topics
+					redis.postMessages(allTopics.map(function (topic) {
+						return {
+							event: "topicUpdated",
+							topic: topic
+						};
+					}));
+				}));
+			})
+		})
+		
 		it('should add a topic on topicAdded for key', function (done) {
 			expect(7);
 			

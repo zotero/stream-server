@@ -421,17 +421,25 @@ module.exports = function (onInit) {
 		var removedSubscriptions = [];
 		for (let i = 0; i < data.subscriptions.length; i++) {
 			let sub = data.subscriptions[i];
-			if (sub.apiKey === undefined) {
-				throw new WSError(400, "'apiKey' not provided");
-			}
 			if (sub.topic && typeof sub.topic != 'string') {
 				throw new WSError(400, "'topic' must be a string");
 			}
 			
-			let topics = connections.removeConnectionSubscriptionsByKeyAndTopic(
-				connection, sub.apiKey, sub.topic
-			);
-			if (topics) {
+			let topics = [];
+			if (sub.apiKey) {
+				topics = connections.removeConnectionSubscriptionsByKeyAndTopic(
+					connection, sub.apiKey, sub.topic
+				);
+			} else {
+				let removed = connections.removeConnectionSubscriptionByTopic(
+					connection, sub.topic
+				);
+				if (removed) {
+					topics = [sub.topic];
+				}
+			}
+			
+			if (topics.length) {
 				removedSubscriptions.push({
 					apiKey: sub.apiKey,
 					topics
