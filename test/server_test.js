@@ -586,14 +586,11 @@ describe("Streamer Tests:", function () {
 					assert.isUndefined(response.subscriptions[0].apiKey);
 					assert.sameMembers(response.subscriptions[0].topics, topics);
 					
-					var clock = sinon.useFakeTimers();
-					
 					// Listen for update notifications
 					var topicUpdatedCalled = 0;
 					ws.on('message', function (data) {
 						onEvent(data, 'topicUpdated', function (fields) {
 							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
-								clock.restore();
 								ws.end();
 								done();
 							});
@@ -610,7 +607,6 @@ describe("Streamer Tests:", function () {
 						};
 					}));
 					
-					clock.tick(30 * 1000);
 				}));
 			})
 		});

@@ -42,16 +42,6 @@ var zoteroAPI = require('./zotero_api');
 var redis = require('./redis');
 
 module.exports = function (onInit) {
-	const GLOBAL_TOPICS = [
-		'styles',
-		'translators'
-	];
-	// Minimum delay before clients should act on global topic notifications -- since these are triggered
-	// by webhooks or other queued notifications, they need time to be processed elsewhere
-	const GLOBAL_TOPICS_MIN_DELAY = 30 * 1000;
-	// Notification action period -- clients are given a randomly chosen delay within this time
-	// period before they should act upon the notification, so that we don't DDoS ourselves
-	const GLOBAL_TOPICS_DELAY_PERIOD = 60 * 1000;
 	
 	var server;
 	var statusIntervalID;
@@ -69,12 +59,9 @@ module.exports = function (onInit) {
 			delete continuedTimeouts[topic];
 		}
 		
-		if (continued) {
-			continuedTimeouts[topic] = setTimeout(fn, config.get('continuedDelay'));
-		}
-		else {
-			fn();
-		}
+		continuedTimeouts[topic] = setTimeout(fn,
+			continued ? config.get('continuedDelay') : config.get('continuedDelayDefault')
+		);
 	}
 	
 	/**
@@ -97,9 +84,9 @@ module.exports = function (onInit) {
 		
 		switch (data.event) {
 		case 'topicUpdated':
-			if (GLOBAL_TOPICS.includes(topic)) {
-				let min = GLOBAL_TOPICS_MIN_DELAY;
-				let max = GLOBAL_TOPICS_MIN_DELAY + GLOBAL_TOPICS_DELAY_PERIOD;
+			if (config.get('globalTopics').includes(topic)) {
+				let min = config.get('globalTopicsMinDelay');
+				let max = config.get('globalTopicsMinDelay') + config.get('globalTopicsDelayPeriod');
 				connections.sendEventForTopic(topic, event, {
 					topic: topic,
 					delay: Math.floor(Math.random() * (max - min + 1)) + min
@@ -171,7 +158,7 @@ module.exports = function (onInit) {
 			if (apiKey) {
 				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
 				// Append global topics to key's allowed topic list
-				topics = topics.concat(GLOBAL_TOPICS);
+				topics = topics.concat(config.get('globalTopics'));
 				var keyTopics = {
 					apiKeyID: apiKeyID,
 					apiKey: apiKey,
@@ -323,7 +310,7 @@ module.exports = function (onInit) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
 					// Allow global topics
-					if (GLOBAL_TOPICS.includes(topic)) {
+					if (config.get('globalTopics').includes(topic)) {
 						if (!successful.public) {
 							successful.public = {
 								accessTracking: false,
