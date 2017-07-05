@@ -66,7 +66,7 @@ module.exports = function (onInit) {
 		var timeout = continuedTimeouts[topic];
 		if (timeout) {
 			clearTimeout(timeout);
-			continuedTimeouts[topic] = undefined;
+			delete continuedTimeouts[topic];
 		}
 		
 		if (continued) {

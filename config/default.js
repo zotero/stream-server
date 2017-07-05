@@ -20,7 +20,7 @@ var config = {
 	apiVersion: 3,
 	apiRequestHeaders: {},
 	longStackTraces: false,
-	continuedDelay: 30000,
+	continuedDelay: 30 * 1000,
 	statsD: {
 		host: ''
 	}
