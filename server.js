@@ -651,7 +651,12 @@ module.exports = function (onInit) {
 		statusIntervalID = setInterval(function () {
 			log.info(connections.status());
 			if (log.showing('trace')) {
-				log.info(require('util').inspect(process.memoryUsage()));
+				let mem = process.memoryUsage();
+				log.info(
+					`RSS: ${Math.round(mem.rss / 1024 / 1024)} MB, `
+					+ `Heap: ${Math.round(mem.heapUsed / 1024 / 1024)}`
+						+ `/${Math.round(mem.heapTotal / 1024 / 1024)} MB`
+				);
 			}
 		}, config.get('statusInterval') * 1000);
 		
