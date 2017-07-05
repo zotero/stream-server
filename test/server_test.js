@@ -230,7 +230,45 @@ describe("Streamer Tests:", function () {
 				});
 			});
 		});
-
+		
+		it('should delay continued and pass through other requests', function (done) {
+			var {apiKey, apiKeyID} = makeAPIKey();
+			var topic = '/users/123456';
+			
+			sinon.stub(zoteroAPI, 'getKeyInfo')
+				.withArgs(apiKey)
+				.returns(Promise.resolve({topics: [topic], apiKeyID: apiKeyID}));
+			
+			var clock = sinon.useFakeTimers();
+			var start = 0;
+			
+			var ws = new WebSocket({apiKey: apiKey});
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', function (fields) {
+					zoteroAPI.getKeyInfo.restore();
+					
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							var delta = Date.now() - start;
+							assert.equal(delta, config.get('continuedDelay'));
+							clock.restore();
+							ws.end();
+							done();
+						});
+					});
+					
+					start = Date.now();
+					redis.postMessages({
+						event: "topicUpdated",
+						topic: topic,
+						continued: true
+					});
+					
+					clock.tick(config.get('continuedDelay'));
+				});
+			});
+		});
+		
 		it('should delete a topic on topicRemoved', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
@@ -548,14 +586,11 @@ describe("Streamer Tests:", function () {
 					assert.isUndefined(response.subscriptions[0].apiKey);
 					assert.sameMembers(response.subscriptions[0].topics, topics);
 					
-					var clock = sinon.useFakeTimers();
-					
 					// Listen for update notifications
 					var topicUpdatedCalled = 0;
 					ws.on('message', function (data) {
 						onEvent(data, 'topicUpdated', function (fields) {
 							assert.equal(fields.topic, topics[topicUpdatedCalled]).done(function () {
-								clock.restore();
 								ws.end();
 								done();
 							});
@@ -572,7 +607,6 @@ describe("Streamer Tests:", function () {
 						};
 					}));
 					
-					clock.tick(30 * 1000);
 				}));
 			})
 		});
