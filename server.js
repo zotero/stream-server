@@ -32,6 +32,7 @@ var fs = require('fs');
 var url = require('url');
 var domain = require('domain');
 var path = require('path');
+var Netmask = require('netmask').Netmask;
 var util = require('util');
 
 var utils = require('./utils');
@@ -649,7 +650,16 @@ module.exports = function (onInit) {
 		});
 		// The remote IP address is only available at connection time in the upgrade request
 		wss.on('connection', function (ws) {
-			ws.remoteAddress = ws.upgradeReq.connection.remoteAddress;
+			var remoteAddress = ws._socket.remoteAddress;
+			var xForwardedFor = ws.upgradeReq.headers['x-forwarded-for'];
+			if (remoteAddress && xForwardedFor) {
+				let proxies = config.get('trustedProxies');
+				if (Array.isArray(proxies)
+						&& proxies.some(cidr => new Netmask(cidr).contains(remoteAddress))) {
+					remoteAddress = xForwardedFor;
+				}
+			}
+			ws.remoteAddress = remoteAddress;
 			handleWebSocketConnection(ws);
 		});
 		

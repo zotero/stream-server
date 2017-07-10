@@ -8,6 +8,7 @@ var config = {
 	httpPort: 8080,
 	proxyProtocol: false,
 	https: false,
+	trustedProxies: [],
 	statusInterval: 10,
 	keepaliveInterval: 25,
 	retryTime: 10,
