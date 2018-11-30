@@ -25,9 +25,13 @@
 var config = require('config');
 var Promise = require("bluebird");
 var request = Promise.promisify(require('request'));
+var cwait = require('cwait');
 
 var utils = require('./utils');
 var log = require('./log');
+
+var API_CONCURRENCY_LIMIT = 50;
+var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
 
 //
 // Zotero API interaction
@@ -37,7 +41,7 @@ var log = require('./log');
  * @param {String} apiKey
  * @return {String[]} - All topics accessible by the key
  */
-exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
+exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey) {
 	var topics = [];
 	
 	// Get userID and user topic if applicable
@@ -102,12 +106,12 @@ exports.getKeyInfo = Promise.coroutine(function*(apiKey) {
 		topics: topics,
 		apiKeyID: apiKeyID
 	};
-});
+}));
 
 /**
  * Check to make sure the given topic is in the list of available topics
  */
-exports.checkPublicTopicAccess = Promise.coroutine(function* (topic) {
+exports.checkPublicTopicAccess = queue.wrap(Promise.coroutine(function* (topic) {
 	try {
 		// TODO: Use HEAD request once main API supports it
 		// TODO: Don't use /items
@@ -139,7 +143,7 @@ exports.checkPublicTopicAccess = Promise.coroutine(function* (topic) {
 		}
 		throw new Error("Error getting key permissions: " + e);
 	}
-});
+}));
 
 
 function getAPIRequestHeaders(apiKey) {
