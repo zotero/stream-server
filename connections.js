@@ -86,7 +86,8 @@ module.exports = function () {
 				keepaliveID: setInterval(function () {
 					self.keepalive(connection);
 				}, config.get('keepaliveInterval') * 1000),
-				attributes: attributes
+				attributes: attributes,
+				waitingForPong: false
 			};
 			connections.push(connection);
 			return connection;
@@ -500,7 +501,13 @@ module.exports = function () {
 		},
 		
 		keepalive: function (connection) {
+			if (connection.waitingForPong) {
+				// Close connection if failed to get a pong response
+				this.closeConnection(connection);
+				return;
+			}
 			connection.ws.ping();
+			connection.waitingForPong = true;
 		},
 		
 		status: function () {
