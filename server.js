@@ -206,6 +206,10 @@ module.exports = function (onInit) {
 					log.warn("Connection not found", ws);
 				}
 			});
+			
+			ws.on('pong', function () {
+				connection.waitingForPong = false;
+			});
 		})()
 		.catch(function (e) {
 			handleError(ws, e);
