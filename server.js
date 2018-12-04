@@ -45,6 +45,7 @@ var redis = require('./redis');
 module.exports = function (onInit) {
 	
 	var server;
+	var wss;
 	var statusIntervalID;
 	var stopping;
 	var continuedTimeouts = {};
@@ -200,6 +201,11 @@ module.exports = function (onInit) {
 			});
 			
 			ws.on('close', function () {
+				// Ignore 'close' event when stopping
+				// to prevent triggering slow deregistration
+				if (stopping) {
+					return;
+				}
 				log.info("WebSocket connection was closed", ws);
 				var closed = connections.deregisterConnectionByWebSocket(ws);
 				if (!closed) {
@@ -495,35 +501,22 @@ module.exports = function (onInit) {
 		}
 		stopping = true;
 		
-		return Promise.coroutine(function* () {
-			if (server) {
-				try {
-					server.close(function () {
-						log.info("All connections closed");
-					});
-				}
-				catch (e) {
-					log.error(e);
-				}
-			}
-			
-			try {
-				connections.deregisterAllConnections();
-			}
-			catch (e) {
-				log.error(e);
-			}
-			
-			if (statusIntervalID) {
-				clearTimeout(statusIntervalID);
-			}
-			
-			var shutdownDelay = config.get('shutdownDelay');
-			log.info("Waiting " + (shutdownDelay / 1000) + " seconds before exiting");
-			yield Promise.delay(shutdownDelay)
+		if (statusIntervalID) {
+			clearTimeout(statusIntervalID);
+		}
+		
+		if (server) {
+			server.close(function () {
+				wss.clients.forEach((ws) => ws.close(1000));
+				wss.close();
+				log.info("All connections closed. Exiting");
+				process.exit(err ? 1 : 0);
+			});
+		}
+		else {
 			log.info("Exiting");
 			process.exit(err ? 1 : 0);
-		})();
+		}
 	}
 	
 	//
@@ -640,7 +633,7 @@ module.exports = function (onInit) {
 		
 		// Give server WebSocket powers
 		var WebSocketServer = require('uws').Server;
-		var wss = new WebSocketServer({
+		wss = new WebSocketServer({
 			server: server,
 			verifyClient: function (info, cb) {
 				var pathname = url.parse(info.req.url).pathname;
