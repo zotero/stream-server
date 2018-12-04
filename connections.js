@@ -501,8 +501,9 @@ module.exports = function () {
 		},
 		
 		keepalive: function (connection) {
+			// Close connection if we failed to get a pong response
 			if (connection.waitingForPong) {
-				// Close connection if failed to get a pong response
+				log.info("Pong not received -- closing connection");
 				this.closeConnection(connection);
 				return;
 			}
