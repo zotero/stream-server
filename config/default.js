@@ -12,7 +12,6 @@ var config = {
 	statusInterval: 10,
 	keepaliveInterval: 25,
 	retryTime: 10,
-	shutdownDelay: 100,
 	redis: {
 		host: '',
 		prefix: ''

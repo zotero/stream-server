@@ -421,13 +421,6 @@ module.exports = function () {
 			return false
 		},
 		
-		deregisterAllConnections: function () {
-			log.info("Closing all connections");
-			for (var i = 0; i < connections.length; i++) {
-				this.deregisterConnection(connections[i]);
-			}
-		},
-		
 		
 		//
 		// Event methods
