@@ -23,7 +23,7 @@
 		"redis": "^2.7.1",
 		"request": "^2.88.0",
 		"strftime": "^0.10.0",
-		"uws": "^8.14.0"
+		"uws": "10.148.1"
 	},
 	"devDependencies": {
 		"chai": "^1.10.0",
