@@ -500,6 +500,7 @@ module.exports = function () {
 			// Close connection if we failed to get a pong response
 			if (connection.waitingForPong) {
 				log.info("Pong not received -- closing connection");
+				connection.ws.terminate();
 				this.closeConnection(connection);
 				return;
 			}
