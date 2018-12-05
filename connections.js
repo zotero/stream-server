@@ -24,6 +24,7 @@
 
 var config = require('config');
 var randomstring = require('randomstring');
+var WebSocket = require('uws');
 var utils = require('./utils');
 var log = require('./log');
 var statsD = require('./statsd');
@@ -434,7 +435,9 @@ module.exports = function () {
 			}
 			json = JSON.stringify(json);
 			log.debug("Send: " + json, connection);
-			connection.ws.send(json);
+			if (connection.ws.readyState === WebSocket.OPEN) {
+				connection.ws.send(json);
+			}
 		},
 		
 		/**
