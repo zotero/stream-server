@@ -208,7 +208,7 @@ module.exports = function (onInit) {
 				}
 				log.info("WebSocket connection was closed", ws);
 				var closed = connections.deregisterConnectionByWebSocket(ws);
-				if (!closed) {
+				if (!closed && !ws.zoteroClosed) {
 					log.warn("Connection not found", ws);
 				}
 			});

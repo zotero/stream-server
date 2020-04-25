@@ -499,12 +499,14 @@ module.exports = function () {
 		keepalive: function (connection) {
 			// Close connection if we failed to get a pong response
 			if (connection.waitingForPong) {
-				log.info("Pong not received -- closing connection");
+				log.info("Pong not received", connection.ws);
 				// Terminate the connection immediately to make sure
 				// that we aren't waiting for any graceful closing procedures,
 				// because the connection is already dead
 				connection.ws.terminate();
-				this.closeConnection(connection);
+				// Avoid warning in ws.on('close') in server.js
+				connection.ws.zoteroClosed = true;
+				this.deregisterConnection(connection);
 				return;
 			}
 			connection.ws.ping();
