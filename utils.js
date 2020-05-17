@@ -85,11 +85,11 @@ module.exports = function () {
 			}
 			log.info(code + " - " + logMessage, ws);
 			
-			// For 500 errors, hide real error message unless this is a dev site
-			if (this.isServerError(code) && (!config.has('dev') || !config.get('dev'))) {
+			// For 4500 errors, hide real error message unless this is a dev site
+			if (this.isServerErrorWS(code) && (!config.has('dev') || !config.get('dev'))) {
 				msg = "Error";
 			}
-			ws.close(code, msg);
+			ws.send(JSON.stringify({event: 'error', code, message: msg}));
 		},
 		
 		getIPAddressFromRequest: function (request) {
@@ -123,6 +123,10 @@ module.exports = function () {
 		
 		isServerError: function (code) {
 			return code >= 500 && code < 600;
+		},
+		
+		isServerErrorWS: function (code) {
+			return code >= 4500 && code < 4600;
 		},
 		
 		WSError: WSError
