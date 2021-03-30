@@ -17,7 +17,7 @@
 		"config": "^1.31.0",
 		"cwait": "^1.1.2",
 		"findhit-proxywrap": "^0.3.12",
-		"netmask": "^1.0.6",
+		"netmask": "^2.0.1",
 		"node-statsd": "^0.1.1",
 		"randomstring": "^1.0.3",
 		"redis": "^2.8.0",
