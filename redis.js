@@ -20,11 +20,13 @@
  ***** END LICENSE BLOCK *****
  */
 
-let redis = require('redis');
+let { createClient, AbortError } = require('redis');
 let config = require('config');
 let log = require('./log');
 
-let redisOptions = config.get('redis');
+let redisOptions = {
+	url: config.get('redis').url
+};
 
 // No need to buffer if we resubscribe on reconnect
 redisOptions.enable_offline_queue = false;
@@ -40,19 +42,22 @@ redisOptions.retry_strategy = function (options) {
 	return Math.min(options.attempt * 100, 1000);
 };
 
-let redisClient = redis.createClient(redisOptions);
+let client = createClient(redisOptions);
 
-redisClient.on('error', function (err) {
+client.on('error', function (err) {
 	// Ignore command abort error (AbortError) that happens because of an inactive connection.
 	// We only use two Redis commands - 'subscribe' and 'unsubscribe'.
 	// If a connection fails, we reconnect and resubscribe.
 	// All the previous subscriptions die together with the previous connection
-	if (err instanceof redis.AbortError && err.code === 'NR_CLOSED') return;
+	if (err instanceof AbortError && err.code === 'NR_CLOSED') return;
 	log.error(err);
 });
 
-redisClient.on('reconnecting', function () {
+client.on('reconnecting', function () {
 	log.info('Redis is reconnecting');
 });
 
-module.exports = redisClient;
+log.info("Connecting to " + redisOptions.url);
+client.connect();
+
+module.exports = client;

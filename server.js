@@ -34,15 +34,16 @@ var domain = require('domain');
 var path = require('path');
 var Netmask = require('netmask').Netmask;
 var util = require('util');
+var { WebSocketServer } = require('ws');
 
 var utils = require('./utils');
 var WSError = utils.WSError;
 var log = require('./log');
 var connections = require('./connections');
 var zoteroAPI = require('./zotero_api');
-var redis = require('./redis');
+var redisClient = require('./redis');
 
-module.exports = function (onInit) {
+module.exports = async function (onInit) {
 	
 	var server;
 	var wss;
@@ -136,11 +137,10 @@ module.exports = function (onInit) {
 	}
 	
 	
-	function handleWebSocketConnection(ws) {
+	async function handleWebSocketConnection(ws, req) {
 		log.info("Received WebSocket request", ws);
-		var req = ws.upgradeReq;
 		
-		Promise.coroutine(function* () {
+		try {
 			var urlParts = url.parse(req.url, true);
 			var pathname = urlParts.pathname;
 			var query = urlParts.query;
@@ -158,7 +158,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				let {topics, apiKeyID} = await zoteroAPI.getKeyInfo(apiKey);
 				// Append global topics to key's allowed topic list
 				topics = topics.concat(config.get('globalTopics'));
 				var keyTopics = {
@@ -216,11 +216,10 @@ module.exports = function (onInit) {
 			ws.on('pong', function () {
 				connection.waitingForPong = false;
 			});
-		})()
-		.catch(function (e) {
+		}
+		catch (e) {
 			handleError(ws, e);
-		});
-
+		}
 	}
 	
 	
@@ -228,15 +227,15 @@ module.exports = function (onInit) {
 	/**
 	 * Handle a client request
 	 */
-	function handleClientMessage(ws, message) {
+	async function handleClientMessage(ws, message) {
 		var connection = connections.getConnectionByWebSocket(ws);
 		
-		Promise.coroutine(function* () {
+		try {
 			if (message.length > 1e6) {
 				throw new WSError(1009);
 			}
 			
-			message = message.trim();
+			message = message.toString().trim();
 			if (!message) {
 				throw new WSError(400, "Message not provided");
 			}
@@ -250,7 +249,7 @@ module.exports = function (onInit) {
 			
 			// Add subscriptions
 			if (data.action == "createSubscriptions") {
-				yield handleCreate(connection, data);
+				await handleCreate(connection, data);
 			}
 			
 			// Delete subscription
@@ -265,10 +264,10 @@ module.exports = function (onInit) {
 			else {
 				throw new WSError(400, "Invalid action");
 			}
-		})()
-		.catch(function (e) {
+		}
+		catch (e) {
 			handleError(ws, e);
-		});
+		}
 	}
 	
 	
@@ -277,7 +276,7 @@ module.exports = function (onInit) {
 	 *
 	 * Called from handleClientMessage
 	 */
-	var handleCreate = Promise.coroutine(function* (connection, data) {
+	var handleCreate = async function (connection, data) {
 		if (connection.attributes.singleKey) {
 			throw new WSError(405, "Single-key connection cannot be modified");
 		}
@@ -310,7 +309,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				var {topics: availableTopics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				var {topics: availableTopics, apiKeyID} = await zoteroAPI.getKeyInfo(apiKey);
 			}
 			else if (!topics) {
 				throw new WSError(400, "Either 'apiKey' or 'topics' must be provided");
@@ -354,7 +353,7 @@ module.exports = function (onInit) {
 						}
 					}
 					else {
-						var hasAccess = yield zoteroAPI.checkPublicTopicAccess(topic);
+						var hasAccess = await zoteroAPI.checkPublicTopicAccess(topic);
 						if (hasAccess) {
 							if (!successful.public) {
 								successful.public = {
@@ -424,7 +423,7 @@ module.exports = function (onInit) {
 		}
 		
 		connections.sendEvent(connection, 'subscriptionsCreated', results);
-	});
+	};
 	
 	
 	/**
@@ -526,7 +525,7 @@ module.exports = function (onInit) {
 	//
 	//
 	//
-	return Promise.coroutine(function* () {
+	try {
 		log.info("Starting up [pid: " + process.pid + "]");
 		
 		if (process.env.NODE_ENV != 'test') {
@@ -555,7 +554,7 @@ module.exports = function (onInit) {
 		
 		// 'ready' event is emitted every time when Redis connects.
 		// Each time we have to resubscribe to all topics and keys.
-		redis.on('ready', function () {
+		redisClient.on('ready', async function () {
 			let channels = connections.getSubscriptions();
 			if (!channels.length) return;
 			
@@ -583,14 +582,12 @@ module.exports = function (onInit) {
 				}
 			}
 			
-			log.info('Resubscribing to ' + channels.length + ' channel(s)');
+			log.info('Subscribing to ' + channels.length + ' channel(s)');
 			// There is a node_redis bug which is triggered when
 			// the previously documented problem happens.
 			// TODO: Keep track the state of this bug: https://github.com/NodeRedis/node_redis/issues/1230
-			redis.subscribe(channels, function (err) {
-				if (err) return log.error(err);
-				log.info('Resubscribing done');
-			});
+			await redisClient.subscribe(channels, handleNotification);
+			log.info('Done subscribing');
 		});
 		
 		//
@@ -632,9 +629,8 @@ module.exports = function (onInit) {
 		});
 		
 		// Give server WebSocket powers
-		var WebSocketServer = require('uws').Server;
 		wss = new WebSocketServer({
-			server: server,
+			server,
 			verifyClient: function (info, cb) {
 				var pathname = url.parse(info.req.url).pathname;
 				if (pathname != '/') {
@@ -646,9 +642,9 @@ module.exports = function (onInit) {
 			}
 		});
 		// The remote IP address is only available at connection time in the upgrade request
-		wss.on('connection', function (ws) {
-			var remoteAddress = ws._socket.remoteAddress;
-			var xForwardedFor = ws.upgradeReq.headers['x-forwarded-for'];
+		wss.on('connection', function (ws, req) {
+			var remoteAddress = req.socket.remoteAddress;
+			var xForwardedFor = req.headers['x-forwarded-for'];
 			if (remoteAddress && xForwardedFor) {
 				let proxies = config.get('trustedProxies');
 				if (Array.isArray(proxies)
@@ -657,10 +653,10 @@ module.exports = function (onInit) {
 				}
 			}
 			ws.remoteAddress = remoteAddress;
-			handleWebSocketConnection(ws);
+			handleWebSocketConnection(ws, req);
 		});
 		
-		yield Promise.promisify(server.listen, server)(config.get('httpPort'), '0.0.0.0');
+		await Promise.promisify(server.listen, server)(config.get('httpPort'), '0.0.0.0');
 		
 		log.info("Listening on port " + config.get('httpPort'));
 		
@@ -679,18 +675,24 @@ module.exports = function (onInit) {
 		
 		setTimeout(function () {
 			if (onInit) {
-				onInit();
+				onInit({ shutdown });
 			}
+		});
+		
+		await redisClient.subscribe(channels, handleNotification);
+		
+		/*redis.subscribe('channel_name', (message, channelName) => {
+			console.info(message, channelName);
 		});
 		
 		// Listen for Redis messages
 		redis.on('message', function (channel, message) {
 			handleNotification(message);
-		});
-	})()
-	.catch(function (e) {
+		});*/
+	}
+	catch (e) {
 		log.error("Caught error");
 		console.log(e.stack);
 		shutdown(e);
-	});
+	}
 };

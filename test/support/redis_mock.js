@@ -30,40 +30,42 @@ let Redis = function () {
 module.exports = Redis;
 
 Redis.createClient = function () {
-	return this;
-};
-
-Redis.subscribe = function (channels) {
-	if (!Array.isArray(channels)) {
-		channels = [channels];
-	}
-	
-	for (let i = 0; i < channels.length; i++) {
-		let channel = channels[i].toString();
-		if (_channels.indexOf(channel) < 0) {
-			_channels.push(channel);
+	return {
+		connect: () => {},
+		
+		subscribe: function (channels) {
+			if (!Array.isArray(channels)) {
+				channels = [channels];
+			}
+			
+			for (let i = 0; i < channels.length; i++) {
+				let channel = channels[i].toString();
+				if (_channels.indexOf(channel) < 0) {
+					_channels.push(channel);
+				}
+			}
+		},
+		
+		unsubscribe: function (channels) {
+			if (!Array.isArray(channels)) {
+				channels = [channels];
+			}
+			
+			for (let i = 0; i < channels.length; i++) {
+				let channel = channels[i].toString();
+				let n = _channels.indexOf(channel);
+				if (n >= 0) {
+					_channels.splice(n, 1);
+				}
+			}
+		},
+		
+		on: function (event, callback) {
+			if (event == 'message') {
+				_listeners.push(callback);
+			}
 		}
-	}
-};
-
-Redis.unsubscribe = function (channels) {
-	if (!Array.isArray(channels)) {
-		channels = [channels];
-	}
-	
-	for (let i = 0; i < channels.length; i++) {
-		let channel = channels[i].toString();
-		let n = _channels.indexOf(channel);
-		if (n >= 0) {
-			_channels.splice(n, 1);
-		}
-	}
-};
-
-Redis.on = function (event, callback) {
-	if (event == 'message') {
-		_listeners.push(callback);
-	}
+	};
 };
 
 Redis.postMessages = function (messages) {

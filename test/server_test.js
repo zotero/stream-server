@@ -48,7 +48,9 @@ var makeAPIKey = testUtils.makeAPIKey;
 
 // Start server
 var defer = Promise.defer();
-require('../server')(function () {
+var shutdown;
+require('../server')(function ({ shutdown: _shutdown }) {
+	shutdown = _shutdown;
 	defer.resolve();
 });
 
@@ -70,6 +72,10 @@ describe("Streamer Tests:", function () {
 	});
 	afterEach(function () {
 		console.log((new Array(63)).join("=") + "\n");
+	});
+	
+	after(function () {
+		shutdown();
 	});
 	
 	describe("Health check", function () {
