@@ -19,22 +19,17 @@
 		"findhit-proxywrap": "^0.3.12",
 		"netmask": "^1.0.6",
 		"node-statsd": "^0.1.1",
-		"randomstring": "^1.0.3",
-		"redis": "^2.8.0",
-		"request": "^2.88.0",
-		"strftime": "^0.10.0",
-		"uws": "10.148.1"
+		"randomstring": "^1.2.2",
+		"redis": "^4.0.3",
+		"request": "^2.88.2",
+		"strftime": "^0.10.1",
+		"ws": "^8.4.2"
 	},
 	"devDependencies": {
 		"chai": "^1.10.0",
-		"mocha": "^5.2.0",
+		"mocha": "^9.2.0",
 		"mockery": "^1.4.0",
-		"sinon": "^2.4.1",
-		"ws": "^6.1.2"
-	},
-	"engines": {
-		"node": ">=0.12.0",
-		"iojs": ">=1.0.0"
+		"sinon": "^2.4.1"
 	},
 	"license": "AGPL-3.0"
 }

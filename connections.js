@@ -24,7 +24,7 @@
 
 var config = require('config');
 var randomstring = require('randomstring');
-var WebSocket = require('uws');
+var WebSocket = require('ws');
 var utils = require('./utils');
 var log = require('./log');
 var statsD = require('./statsd');
