@@ -30,7 +30,7 @@ var cwait = require('cwait');
 var utils = require('./utils');
 var log = require('./log');
 
-var API_CONCURRENCY_LIMIT = 50;
+var API_CONCURRENCY_LIMIT = 10;
 var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
 
 //
