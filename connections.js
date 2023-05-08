@@ -227,7 +227,7 @@ module.exports = function () {
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
 				this.addKeyMapping(apiKeyID, apiKey);
-				redis.subscribe('api-key:' + (config.get('redis').prefix || '') + apiKeyID);
+				redis.subscribe((config.get('redis').prefix || '') + 'api-key:' + apiKeyID);
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
