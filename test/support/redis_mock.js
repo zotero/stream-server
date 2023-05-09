@@ -20,7 +20,7 @@
  ***** END LICENSE BLOCK *****
  */
 
-let _listeners = [];
+let _listeners = {};
 let _channels = [];
 
 let Redis = function () {
@@ -33,7 +33,7 @@ Redis.createClient = function () {
 	return {
 		connect: () => {},
 		
-		subscribe: function (channels) {
+		subscribe: function (channels, callback) {
 			if (!Array.isArray(channels)) {
 				channels = [channels];
 			}
@@ -42,6 +42,10 @@ Redis.createClient = function () {
 				let channel = channels[i].toString();
 				if (_channels.indexOf(channel) < 0) {
 					_channels.push(channel);
+				}
+				if (callback) {
+					_listeners[channel] = _listeners[channel] || []
+					_listeners[channel].push(callback)
 				}
 			}
 		},
@@ -59,14 +63,14 @@ Redis.createClient = function () {
 				}
 			}
 		},
-		
-		on: function (event, callback) {
-			if (event == 'message') {
-				_listeners.push(callback);
-			}
-		}
+		on: function (event, callback) {}
 	};
 };
+// Reset channels and listeners - used before each new test
+Redis.reset = function () {
+	_channels = [];
+	_listeners = {};
+}
 
 Redis.postMessages = function (messages) {
 	if (!Array.isArray(messages)) {
@@ -84,9 +88,9 @@ Redis.postMessages = function (messages) {
 		}
 		
 		if (_channels.indexOf(channel) >= 0) {
-			for (let j = 0; j < _listeners.length; j++) {
-				let listener = _listeners[j];
-				listener(channel, JSON.stringify(message));
+			for (let j = 0; j < _listeners[channel]?.length || 0; j++) {
+				let listener = _listeners[channel][j];
+				listener(JSON.stringify(message));
 			}
 		}
 	}
