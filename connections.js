@@ -41,8 +41,73 @@ module.exports = function () {
 	var keySubscriptions = {};
 	var numConnections = 0;
 	var numSubscriptions = 0; // This is only a topic subscriptions number, without keys
-	
+	var continuedTimeouts = {};
+
+	/**
+	 * Debounce notification sending if there is a 'continued' flag,
+	 * otherwise pass through instantly
+	 */
+	function debounceContinued(topic, continued, fn) {
+		var timeout = continuedTimeouts[topic];
+		if (timeout) {
+			clearTimeout(timeout);
+			delete continuedTimeouts[topic];
+		}
+		
+		continuedTimeouts[topic] = setTimeout(fn,
+			continued ? config.get('continuedDelay') : config.get('continuedDelayDefault')
+		);
+	}
+
 	return {
+		handleNotification: function(message) {
+			log.trace(message);
+			try {
+				var data = JSON.parse(message);
+			}
+			catch (e) {
+				log.error("Error parsing message: " + message);
+				return;
+			}
+			
+			var apiKeyID = data.apiKeyID;
+			var topic = data.topic;
+			var event = data.event;
+			var continued = data.continued;
+
+			switch (data.event) {
+			case 'topicUpdated':
+				if (config.get('globalTopics').includes(topic)) {
+					let min = config.get('globalTopicsMinDelay');
+					let max = config.get('globalTopicsMinDelay') + config.get('globalTopicsDelayPeriod');
+
+					this.sendEventForTopic(topic, event, {
+						topic: topic,
+						delay: Math.floor(Math.random() * (max - min + 1)) + min
+					});
+				} else {
+					debounceContinued(topic, continued, () => {
+						this.sendEventForTopic(topic, event, {
+							topic: topic,
+							version: data.version
+						});
+					});
+				}
+				break;
+			
+			case 'topicAdded':
+				this.handleTopicAdded(apiKeyID, topic);
+				break;
+				
+			case 'topicRemoved':
+				this.handleTopicRemoved(apiKeyID, topic);
+				break;
+			
+			case 'topicDeleted':
+				this.handleTopicDeleted(topic);
+				break;
+			}
+		},
 		
 		getSubscriptions: function () {
 			var topics = Object.keys(topicSubscriptions);
@@ -217,7 +282,7 @@ module.exports = function () {
 			}
 			// Subscribe to redis channel if this topic is new
 			if (topicSubscriptions[topic].length == 0) {
-				redis.subscribe((config.get('redis').prefix || '') + topic);
+				redis.subscribe((config.get('redis').prefix || '') + topic, this.handleNotification.bind(this) );
 			}
 			topicSubscriptions[topic].push(subscription);
 			
@@ -227,7 +292,7 @@ module.exports = function () {
 			// Subscribe to redis channel if this apiKey is new
 			if (keySubscriptions[apiKey].length == 0) {
 				this.addKeyMapping(apiKeyID, apiKey);
-				redis.subscribe((config.get('redis').prefix || '') + 'api-key:' + apiKeyID);
+				redis.subscribe((config.get('redis').prefix || '') + 'api-key:' + apiKeyID, this.handleNotification.bind(this));
 			}
 			keySubscriptions[apiKey].push(subscription);
 			
