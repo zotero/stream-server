@@ -4,5 +4,5 @@
 	"redis": {
 		"prefix": ""
 	},
-	"continuedDelayDefault": 0
+	"defaultDelay": 0
 }
