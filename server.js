@@ -518,7 +518,7 @@ module.exports = async function (onInit) {
 			// There is a node_redis bug which is triggered when
 			// the previously documented problem happens.
 			// TODO: Keep track the state of this bug: https://github.com/NodeRedis/node_redis/issues/1230
-			await redisClient.subscribe(channels, connections.handleNotification);
+			await redisClient.subscribe(channels, connections.handleNotification.bind(connections));
 			log.info('Done subscribing');
 		});
 		
@@ -611,8 +611,8 @@ module.exports = async function (onInit) {
 			}
 		});
 		
-		await redisClient.subscribe(channels, connections.handleNotification);
-		
+		await redisClient.subscribe(channels, connections.handleNotification.bind(connections));
+
 	}
 	catch (e) {
 		log.error("Caught error");
