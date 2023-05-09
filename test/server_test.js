@@ -68,6 +68,7 @@ describe("Streamer Tests:", function () {
 	afterEach(assertionCount.check);
 	
 	beforeEach(function () {
+		redis.reset();
 		console.log((new Array(63)).join("="));
 	});
 	afterEach(function () {
