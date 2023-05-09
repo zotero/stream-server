@@ -552,10 +552,11 @@ module.exports = async function (onInit) {
 			});
 		}
 		
+		var channels = [];
 		// 'ready' event is emitted every time when Redis connects.
 		// Each time we have to resubscribe to all topics and keys.
 		redisClient.on('ready', async function () {
-			let channels = connections.getSubscriptions();
+			channels = connections.getSubscriptions();
 			if (!channels.length) return;
 			
 			// After reconnect, we resubscribe Redis connection to all channels (keys + topics),
@@ -681,14 +682,11 @@ module.exports = async function (onInit) {
 		
 		await redisClient.subscribe(channels, handleNotification);
 		
-		/*redis.subscribe('channel_name', (message, channelName) => {
-			console.info(message, channelName);
-		});
 		
 		// Listen for Redis messages
-		redis.on('message', function (channel, message) {
+		redisClient.on('message', function (channel, message) {
 			handleNotification(message);
-		});*/
+		});
 	}
 	catch (e) {
 		log.error("Caught error");
