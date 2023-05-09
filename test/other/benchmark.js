@@ -62,6 +62,7 @@ function startTest() {
 	let redisClient = redis.createClient(redisOptions);
 	redisClient.on('error', function (err) {
 	});
+	redisClient.connect();
 	
 	sinon.stub(zoteroAPI, 'getKeyInfo').callsFake(Promise.coroutine(function*(apiKey) {
 		let topics = [];

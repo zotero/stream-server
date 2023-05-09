@@ -49,80 +49,6 @@ module.exports = async function (onInit) {
 	var wss;
 	var statusIntervalID;
 	var stopping;
-	var continuedTimeouts = {};
-	
-	/**
-	 * Debounce notification sending if there is a 'continued' flag,
-	 * otherwise pass through instantly
-	 */
-	function debounceContinued(topic, continued, fn) {
-		var timeout = continuedTimeouts[topic];
-		if (timeout) {
-			clearTimeout(timeout);
-			delete continuedTimeouts[topic];
-		}
-		if (continued) {
-			continuedTimeouts[topic] = setTimeout(fn, config.get('continuedDelay'));
-		} 
-		else if (continued == false) {
-			continuedTimeouts[topic] = setTimeout(fn, config.get('notContinuedDelay'));
-		} 
-		else {
-			continuedTimeouts[topic] = setTimeout(fn, config.get('defaultDelay'));
-		}	
-	}
-	
-	/**
-	 * Handle an SQS notification
-	 */
-	function handleNotification(message) {
-		log.trace(message);
-		try {
-			var data = JSON.parse(message);
-		}
-		catch (e) {
-			log.error("Error parsing message: " + message);
-			return;
-		}
-		
-		var apiKeyID = data.apiKeyID;
-		var topic = data.topic;
-		var event = data.event;
-		var continued = data.continued;
-		
-		switch (data.event) {
-		case 'topicUpdated':
-			if (config.get('globalTopics').includes(topic)) {
-				let min = config.get('globalTopicsMinDelay');
-				let max = config.get('globalTopicsMinDelay') + config.get('globalTopicsDelayPeriod');
-				connections.sendEventForTopic(topic, event, {
-					topic: topic,
-					delay: Math.floor(Math.random() * (max - min + 1)) + min
-				});
-			} else {
-				debounceContinued(topic, continued, function () {
-					connections.sendEventForTopic(topic, event, {
-						topic: topic,
-						version: data.version
-					});
-				});
-			}
-			break;
-		
-		case 'topicAdded':
-			connections.handleTopicAdded(apiKeyID, topic);
-			break;
-			
-		case 'topicRemoved':
-			connections.handleTopicRemoved(apiKeyID, topic);
-			break;
-		
-		case 'topicDeleted':
-			connections.handleTopicDeleted(topic);
-			break;
-		}
-	}
-	
 	
 	/**
 	 * Handle an HTTP incoming request
@@ -591,7 +517,7 @@ module.exports = async function (onInit) {
 			// There is a node_redis bug which is triggered when
 			// the previously documented problem happens.
 			// TODO: Keep track the state of this bug: https://github.com/NodeRedis/node_redis/issues/1230
-			await redisClient.subscribe(channels, handleNotification);
+			await redisClient.subscribe(channels, connections.handleNotification.bind(connections));
 			log.info('Done subscribing');
 		});
 		
