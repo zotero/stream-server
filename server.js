@@ -147,12 +147,7 @@ module.exports = function (onInit) {
 		
 		Promise.coroutine(function* () {
 			var urlParts = url.parse(req.url, true);
-			var pathname = urlParts.pathname;
 			var query = urlParts.query;
-			
-			if (pathname != '/') {
-				utils.wsEnd(ws, 404);
-			}
 			
 			// If API key provided, subscribe to all available topics
 			if (query && query.key) {
