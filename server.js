@@ -163,7 +163,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				let {topics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey, ws);
 				// Append global topics to key's allowed topic list
 				topics = topics.concat(config.get('globalTopics'));
 				var keyTopics = {
@@ -315,7 +315,7 @@ module.exports = function (onInit) {
 			}
 			
 			if (apiKey) {
-				var {topics: availableTopics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey);
+				var {topics: availableTopics, apiKeyID} = yield zoteroAPI.getKeyInfo(apiKey, connection);
 			}
 			else if (!topics) {
 				throw new WSError(400, "Either 'apiKey' or 'topics' must be provided");
@@ -359,7 +359,7 @@ module.exports = function (onInit) {
 						}
 					}
 					else {
-						var hasAccess = yield zoteroAPI.checkPublicTopicAccess(topic);
+						var hasAccess = yield zoteroAPI.checkPublicTopicAccess(topic, connection);
 						if (hasAccess) {
 							if (!successful.public) {
 								successful.public = {

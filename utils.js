@@ -94,17 +94,7 @@ module.exports = function () {
 		
 		getIPAddressFromRequest: function (request) {
 			try {
-				var addr = request.socket.clientAddress || request.socket.remoteAddress;
-				
-				/*
-				// If from localhost or local network, use X-Forwarded-For header if available
-				if (request.headers
-						&& request.headers['x-forwarded-for']
-						// TODO: pref
-						&& (addr == '127.0.0.1' || addr.startsWith("10.") || addr.startsWith("192.168."))) {
-					addr = request.headers['x-forwarded-for'].split(' ')[0];
-				}*/
-				
+				let addr = request.socket.clientAddress || request.socket.remoteAddress;
 				return addr;
 			}
 			catch (e) {

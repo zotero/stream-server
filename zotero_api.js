@@ -39,15 +39,17 @@ var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
 
 /**
  * @param {String} apiKey
+ * @param {Object} connection - A connection-like object containing 'remoteAddress'
+ * @param {String} connection.remoteAddress
  * @return {String[]} - All topics accessible by the key
  */
-exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey) {
+exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey, { remoteAddress }) {
 	var topics = [];
 	
 	// Get userID and user topic if applicable
 	var options = {
 		url: config.get('apiURL') + 'keys/current?showid=1',
-		headers: getAPIRequestHeaders(apiKey)
+		headers: getAPIRequestHeaders({ apiKey, remoteAddress })
 	}
 	try {
 		var body = yield request(options).spread(function (response, body) {
@@ -78,7 +80,7 @@ exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey) {
 	// Get groups
 	var options = {
 		url: config.get('apiURL') + 'users/' + data.userID + '/groups',
-		headers: getAPIRequestHeaders(apiKey)
+		headers: getAPIRequestHeaders({ apiKey, remoteAddress })
 	}
 	try {
 		var body = yield request(options).get(1);
@@ -111,14 +113,14 @@ exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey) {
 /**
  * Check to make sure the given topic is in the list of available topics
  */
-exports.checkPublicTopicAccess = queue.wrap(Promise.coroutine(function* (topic) {
+exports.checkPublicTopicAccess = queue.wrap(Promise.coroutine(function* (topic, { remoteAddress }) {
 	try {
 		// TODO: Use HEAD request once main API supports it
 		// TODO: Don't use /items
 		let url = config.get('apiURL') + topic.substr(1) + '/items';
 		var options = {
 			url: url,
-			headers: getAPIRequestHeaders()
+			headers: getAPIRequestHeaders({ remoteAddress })
 		}
 		return request(options).spread(function (response, body) {
 			if (response.statusCode == 200) {
@@ -146,11 +148,14 @@ exports.checkPublicTopicAccess = queue.wrap(Promise.coroutine(function* (topic) 
 }));
 
 
-function getAPIRequestHeaders(apiKey) {
+function getAPIRequestHeaders({ apiKey, remoteAddress }) {
 	var headers = JSON.parse(JSON.stringify(config.get('apiRequestHeaders')));
 	headers['Zotero-API-Version'] = config.get('apiVersion');
 	if (apiKey) {
 		headers['Zotero-API-Key'] = apiKey;
+	}
+	if (remoteAddress) {
+		headers['Zotero-Forwarded-For'] = remoteAddress;
 	}
 	return headers;
 }
