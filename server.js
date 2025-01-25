@@ -432,13 +432,6 @@ module.exports = async function (onInit) {
 			clearTimeout(statusIntervalID);
 		}
 		
-		try {
-			await redisClient.quit();
-		}
-		catch (e) {
-			log.error(e);
-		}
-		
 		if (server) {
 			// Stop accepting new connections and close the HTTP server, which won't finish until
 			// the WS connections are closed
