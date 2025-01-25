@@ -23,10 +23,6 @@
 "use strict";
 
 var config = require('config');
-var Promise = require("bluebird");
-if (config.get('longStackTraces')) {
-	Promise.longStackTraces();
-}
 
 var fs = require('fs');
 var url = require('url');
@@ -612,7 +608,7 @@ module.exports = async function (onInit) {
 			handleWebSocketConnection(ws, req);
 		});
 		
-		await Promise.promisify(server.listen, server)(config.get('httpPort'), '0.0.0.0');
+		await util.promisify(server.listen.bind(server))(config.get('httpPort'), '0.0.0.0');
 		
 		log.info("Listening on port " + config.get('httpPort'));
 		

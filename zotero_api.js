@@ -23,9 +23,8 @@
 "use strict";
 
 var config = require('config');
-var Promise = require("bluebird");
-var request = Promise.promisify(require('request'));
 var cwait = require('cwait');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 var utils = require('./utils');
 var log = require('./log');
@@ -43,58 +42,41 @@ var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
  * @param {String} connection.remoteAddress
  * @return {String[]} - All topics accessible by the key
  */
-exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey, { remoteAddress }) {
+exports.getKeyInfo = queue.wrap(async function(apiKey, { remoteAddress }) {
 	var topics = [];
 	
 	// Get userID and user topic if applicable
-	var options = {
-		url: config.get('apiURL') + 'keys/current?showid=1',
-		headers: getAPIRequestHeaders({ apiKey, remoteAddress })
-	}
-	try {
-		var body = yield request(options).spread(function (response, body) {
-			if (response.statusCode != 200) {
-				throw response;
-			}
-			return body;
-		});
-	}
-	catch (e) {
-		if (e.statusCode == 403) {
+	let response = await fetch(
+		config.get('apiURL') + 'keys/current?showid=1',
+		{
+			headers: getAPIRequestHeaders({ apiKey, remoteAddress })
+		}
+	);
+	if (!response.ok) {
+		if (response.status == 403) {
 			throw new utils.WSError(403, "Invalid API key");
 		}
-		else if (e.statusCode) {
-			throw new utils.WSError(e.statusCode, e.body ? e.body : "Error getting key info");
-		}
-		else {
-			throw new Error("Error getting key info: " + e);
-		}
+		throw new utils.WSError(response.status, await response.text());
 	}
 	
-	var data = JSON.parse(body);
+	var data = await response.json();
 	if (data.access && data.access.user) {
 		topics.push('/users/' + data.userID);
 		topics.push('/users/' + data.userID + '/publications');
 	}
 	
 	// Get groups
-	var options = {
-		url: config.get('apiURL') + 'users/' + data.userID + '/groups',
-		headers: getAPIRequestHeaders({ apiKey, remoteAddress })
-	}
-	try {
-		var body = yield request(options).get(1);
-	}
-	catch (e) {
-		if (e.statusCode) {
-			throw new utils.WSError(e.statusCode, e.body);
+	response = await fetch(
+		config.get('apiURL') + 'users/' + data.userID + '/groups',
+		{
+			headers: getAPIRequestHeaders({ apiKey, remoteAddress })
 		}
-		else {
-			throw new Error("Error getting key groups: " + e);
-		}
+	);
+	if (!response.ok) {
+		throw new utils.WSError(response.status, await response.text());
 	}
 	
-	var groups = JSON.parse(body);
+	var groups = await response.json();
 	for (let i = 0; i < groups.length; i++) {
 		topics.push('/groups/' + groups[i].id);
 	}
@@ -108,44 +90,36 @@ exports.getKeyInfo = queue.wrap(Promise.coroutine(function*(apiKey, { remoteAddr
 		topics: topics,
 		apiKeyID: apiKeyID
 	};
-}));
+});
 
 /**
  * Check to make sure the given topic is in the list of available topics
  */
-exports.checkPublicTopicAccess = queue.wrap(Promise.coroutine(function* (topic, { remoteAddress }) {
-	try {
-		// TODO: Use HEAD request once main API supports it
-		// TODO: Don't use /items
-		let url = config.get('apiURL') + topic.substr(1) + '/items';
-		var options = {
-			url: url,
+exports.checkPublicTopicAccess = queue.wrap(async function (topic, { remoteAddress }) {
+	// TODO: Use HEAD request once main API supports it
+	// TODO: Don't use /items
+	var url = config.get('apiURL') + topic.substr(1) + '/items';
+	var response = await fetch(
+		url,
+		{
 			headers: getAPIRequestHeaders({ remoteAddress })
 		}
-		return request(options).spread(function (response, body) {
-			if (response.statusCode == 200) {
-				return true;
-			}
-			if (response.statusCode == 403 || response.statusCode == 404) {
-				return false;
-			}
-			
-			log.error("Got " + response.statusCode + " from API for " + url);
-			
-			// This shouldn't happen
-			if (utils.isClientError(response.statusCode)) {
-				response.statusCode = 500;
-			}
-			throw new utils.WSError(response.statusCode, response.body);
-		});
+	);
+	if (response.status == 200) {
+		return true;
 	}
-	catch (e) {
-		if (e instanceof utils.WSError) {
-			throw e;
-		}
-		throw new Error("Error getting key permissions: " + e);
+	if (response.status == 403 || response.status == 404) {
+		return false;
 	}
-}));
+	
+	log.error("Got " + response.status + " from API for " + url);
+	
+	// This shouldn't happen
+	if (utils.isClientError(response.status)) {
+		response.statusCode = 500;
+	}
+	throw new utils.WSError(response.status, await response.text);
+});
 
 
 function getAPIRequestHeaders({ apiKey, remoteAddress }) {

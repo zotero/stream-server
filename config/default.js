@@ -19,7 +19,6 @@ var config = {
 	apiURL: 'https://api.zotero.org/',
 	apiVersion: 3,
 	apiRequestHeaders: {},
-	longStackTraces: false,
 	globalTopics: [
 		'styles',
 		'translators'

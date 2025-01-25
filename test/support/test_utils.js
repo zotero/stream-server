@@ -24,7 +24,6 @@
 
 var config = require('config');
 var Promise = require('bluebird');
-var requestAsync = Promise.promisify(require('request'));
 var randomstring = require('randomstring');
 
 module.exports = {

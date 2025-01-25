@@ -28,7 +28,7 @@ var sinon = require('sinon');
 var config = require('config');
 var Promise = require('bluebird');
 var fs = require('fs');
-var requestAsync = Promise.promisify(require('request'));
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 mockery.registerSubstitute('redis', './test/support/redis_mock');
 mockery.enable();
@@ -80,11 +80,12 @@ describe("Streamer Tests:", function () {
 	});
 	
 	describe("Health check", function () {
-		it('should return 200', function () {
-			return requestAsync(baseURL + 'health')
-			.spread(function (response, body) {
-				assert.equal(body, '');
-			});
+		it('should return 200', async function () {
+			var response = await fetch(baseURL + 'health');
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status} connecting to health check`);
+			}
+			assert.equal(await response.text(), '');
 		})
 	})
 	
