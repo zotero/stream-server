@@ -34,7 +34,8 @@ var domain = require('domain');
 var path = require('path');
 var Netmask = require('netmask').Netmask;
 var util = require('util');
-var { WebSocketServer } = require('ws');
+var WebSocket = require('ws');
+var { WebSocketServer } = WebSocket;
 
 var utils = require('./utils');
 var WSError = utils.WSError;
@@ -425,7 +426,7 @@ module.exports = async function (onInit) {
 		}
 	}
 	
-	function shutdown(err) {
+	async function shutdown(err) {
 		if (stopping) {
 			return;
 		}
@@ -435,13 +436,37 @@ module.exports = async function (onInit) {
 			clearTimeout(statusIntervalID);
 		}
 		
+		try {
+			await redisClient.quit();
+		}
+		catch (e) {
+			log.error(e);
+		}
+		
 		if (server) {
+			// Stop accepting new connections and close the HTTP server, which won't finish until
+			// the WS connections are closed
 			server.close(function () {
-				wss.clients.forEach((ws) => ws.close(1000));
-				wss.close();
-				log.info("All connections closed. Exiting");
+				log.info("HTTP server closed -- exiting");
 				process.exit(err ? 1 : 0);
 			});
+			
+			// Disconnect all clients
+			wss.clients.forEach((ws) => {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.close(1000);
+				}
+			});
+			
+			setTimeout(() => {
+				// Forcibly close any stuck connections
+				wss.clients.forEach(ws => {
+					if (ws.readyState !== WebSocket.CLOSED) {
+						log.info("Terminating WebSocket connection");
+						ws.terminate();
+					}
+				});
+			}, 1000);
 		}
 		else {
 			log.info("Exiting");
