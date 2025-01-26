@@ -594,7 +594,11 @@ module.exports = async function (onInit) {
 				let proxies = config.get('trustedProxies');
 				if (Array.isArray(proxies)
 						&& proxies.some(cidr => new Netmask(cidr).contains(remoteAddress))) {
-					remoteAddress = xForwardedFor;
+					// Extract the left-most IP address from the X-Forwarded-For header
+					let forwardedIPs = xForwardedFor.split(',').map(ip => ip.trim());
+					if (forwardedIPs.length > 0) {
+						remoteAddress = forwardedIPs[0];
+					}
 				}
 			}
 			ws.remoteAddress = remoteAddress;
