@@ -85,11 +85,14 @@ module.exports = function () {
 			}
 			log.info(code + " - " + logMessage, ws);
 			
-			// For 500 errors, hide real error message unless this is a dev site
-			if (this.isServerError(code) && (!config.has('dev') || !config.get('dev'))) {
+			// For 500 errors other than 503, hide real error message unless this is a dev site
+			if (this.isServerError(code - 4000) && code != 4503 && (!config.has('dev') || !config.get('dev'))) {
 				msg = "Error";
 			}
-			ws.close(code, msg);
+			// Close frame is 125, and we can only use 123
+			const MAX_PAYLOAD = 123;
+			// Up to first newline or max payload, whichever comes first
+			ws.close(code, msg.match(/^[^\n]+/, msg)[0].substring(0, MAX_PAYLOAD));
 		},
 		
 		getIPAddressFromRequest: function (request) {
