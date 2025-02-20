@@ -29,6 +29,7 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 var utils = require('./utils');
 var log = require('./log');
 
+const API_REQUEST_TIMEOUT = 5000;
 var API_CONCURRENCY_LIMIT = 10;
 var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
 
@@ -42,15 +43,19 @@ var queue = new (cwait.TaskQueue)(Promise, API_CONCURRENCY_LIMIT);
  * @param {String} connection.remoteAddress
  * @return {String[]} - All topics accessible by the key
  */
-exports.getKeyInfo = queue.wrap(async function(apiKey, { remoteAddress }) {
+exports.getKeyInfo = queue.wrap(async function(apiKey, connection) {
 	var topics = [];
 	
 	// Get userID and user topic if applicable
-	let response = await fetch(
-		config.get('apiURL') + 'keys/current?showid=1',
+	let response = await makeRequest(
+		'keys/current?showid=1',
 		{
-			headers: getAPIRequestHeaders({ apiKey, remoteAddress })
-		}
+			headers: getAPIRequestHeaders({
+				apiKey,
+				remoteAddress: connection.remoteAddress
+			}),
+		},
+		connection
 	);
 	if (!response.ok) {
 		if (response.status == 403) {
@@ -66,11 +71,15 @@ exports.getKeyInfo = queue.wrap(async function(apiKey, { remoteAddress }) {
 	}
 	
 	// Get groups
-	response = await fetch(
-		config.get('apiURL') + 'users/' + data.userID + '/groups',
+	response = await makeRequest(
+		'users/' + data.userID + '/groups',
 		{
-			headers: getAPIRequestHeaders({ apiKey, remoteAddress })
-		}
+			headers: getAPIRequestHeaders({
+				apiKey,
+				remoteAddress: connection.remoteAddress
+			}),
+		},
+		connection
 	);
 	if (!response.ok) {
 		throw new utils.WSError(response.status, await response.text());
@@ -95,15 +104,16 @@ exports.getKeyInfo = queue.wrap(async function(apiKey, { remoteAddress }) {
 /**
  * Check to make sure the given topic is in the list of available topics
  */
-exports.checkPublicTopicAccess = queue.wrap(async function (topic, { remoteAddress }) {
+exports.checkPublicTopicAccess = queue.wrap(async function (topic, connection) {
 	// TODO: Use HEAD request once main API supports it
 	// TODO: Don't use /items
-	var url = config.get('apiURL') + topic.substr(1) + '/items';
-	var response = await fetch(
+	var url = topic.substr(1) + '/items';
+	var response = await makeRequest(
 		url,
 		{
-			headers: getAPIRequestHeaders({ remoteAddress })
-		}
+			headers: getAPIRequestHeaders(connection)
+		},
+		connection
 	);
 	if (response.status == 200) {
 		return true;
@@ -112,7 +122,7 @@ exports.checkPublicTopicAccess = queue.wrap(async function (topic, { remoteAddre
 		return false;
 	}
 	
-	log.error("Got " + response.status + " from API for " + url);
+	log.error("Got " + response.status + " from API for " + url, connection);
 	
 	// This shouldn't happen
 	if (utils.isClientError(response.status)) {
@@ -132,4 +142,30 @@ function getAPIRequestHeaders({ apiKey, remoteAddress }) {
 		headers['Zotero-Forwarded-For'] = remoteAddress;
 	}
 	return headers;
+}
+
+async function makeRequest(urlPath, options, connection) {
+	var response;
+	try {
+		response = await fetch(
+			config.get('apiURL') + urlPath,
+			{
+				signal: AbortSignal.timeout(API_REQUEST_TIMEOUT),
+				...options
+			}
+		);
+	}
+	catch (e) {
+		if (e.name === "AbortError") {
+			log.error(
+				`API request /${urlPath} timed out after ${API_REQUEST_TIMEOUT} ms`,
+				connection
+			);
+		}
+		else {
+			log.error(e, connection);
+		}
+		throw new utils.WSError(500, "Server Error");
+	}
+	return response;
 }
