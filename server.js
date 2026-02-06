@@ -247,8 +247,9 @@ module.exports = async function (onInit) {
 			if (topics && topics.length) {
 				for (let j = 0; j < topics.length; j++) {
 					let topic = topics[j];
-					// Allow global topics
-					if (config.get('globalTopics').includes(topic)) {
+					// Allow global topics and login session topics
+					if (config.get('globalTopics').includes(topic)
+							|| topic.startsWith('login-session:')) {
 						if (!successful.public) {
 							successful.public = {
 								accessTracking: false,

@@ -112,6 +112,15 @@ module.exports = function () {
 			case 'topicDeleted':
 				this.handleTopicDeleted(topic);
 				break;
+
+			case 'loginComplete':
+				this.sendEventForTopic(topic, event, {
+					topic: topic,
+					userID: data.userID,
+					username: data.username,
+					apiKey: data.apiKey
+				});
+				break;
 			}
 		},
 		

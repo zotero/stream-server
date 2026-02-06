@@ -1104,6 +1104,54 @@ describe("Streamer Tests:", function () {
 			});
 		})
 		
+		it("should subscribe to a login session topic and receive loginComplete", function (done) {
+			expect(8);
+
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
+					var topic = 'login-session:abc123';
+
+					// Add a subscription -- no API key or access check needed
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							{
+								topics: [topic]
+							}
+						]
+					}, 'subscriptionsCreated');
+
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.isUndefined(response.subscriptions[0].apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, [topic]);
+
+					// Listen for loginComplete notification
+					ws.on('message', function (data) {
+						onEvent(data, 'loginComplete', function (fields) {
+							assert.equal(fields.topic, topic);
+							assert.equal(fields.userID, 12345);
+							assert.equal(fields.username, 'testuser');
+							assert.equal(fields.apiKey, 'testapikey12345678901234').done(function () {
+								ws.end();
+								done();
+							});
+						});
+					});
+
+					// Simulate loginComplete notification from dataserver
+					redis.postMessages({
+						event: "loginComplete",
+						topic: topic,
+						userID: 12345,
+						username: 'testuser',
+						apiKey: 'testapikey12345678901234'
+					});
+				}));
+			});
+		});
+
 		it('should delete a public topic on topicDeleted', function (done) {
 			expect(4);
 			
