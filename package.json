@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"bluebird": "^2.11.0",
-		"config": "^1.31.0",
+		"config": "^4.2.0",
 		"cwait": "^1.1.2",
 		"findhit-proxywrap": "^0.3.13",
 		"netmask": "^1.0.6",
