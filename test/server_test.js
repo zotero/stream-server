@@ -621,6 +621,50 @@ describe("Streamer Tests:", function () {
 			})
 		});
 		
+		it("should include a delay in topicUpdated for global subscriptions", function (done) {
+			expect(5);
+			
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function*(fields) {
+					var topic = 'styles';
+					var minDelay = config.get('globalTopicsMinDelay');
+					var maxDelay = minDelay + config.get('globalTopicsDelayPeriod');
+					
+					// Add a subscription
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							{
+								topics: [topic]
+							}
+						]
+					}, 'subscriptionsCreated');
+					
+					assert.lengthOf(response.subscriptions, 1);
+					assert.sameMembers(response.subscriptions[0].topics, [topic]);
+					
+					// Listen for update notifications
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', function (fields) {
+							assert.equal(fields.topic, topic);
+							assert.operator(fields.delay, '>=', minDelay);
+							assert.operator(fields.delay, '<=', maxDelay).done(function () {
+								ws.end();
+								done();
+							});
+						});
+					});
+					
+					// Trigger notification on the subscribed topic
+					redis.postMessages({
+						event: "topicUpdated",
+						topic: topic
+					});
+				}));
+			})
+		});
+		
 		it("should ignore inaccessible subscriptions in add requests", function (done) {
 			expect(13);
 			
