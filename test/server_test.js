@@ -141,7 +141,7 @@ describe("Streamer Tests:", function () {
 		it('should include all accessible topics', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
-			var globalTopics = ['styles', 'translators'];
+			var globalTopics = ['styles', 'translators', 'plugin-blocklist'];
 			var allTopics = topics.concat(globalTopics);
 			
 			sinon.stub(zoteroAPI, 'getKeyInfo')
@@ -165,7 +165,7 @@ describe("Streamer Tests:", function () {
 		it('should accept keys via Zotero-API-Key', function (done) {
 			var {apiKey, apiKeyID} = makeAPIKey();
 			var topics = ['/users/123456', '/users/123456/publications', '/groups/234567'];
-			var globalTopics = ['styles', 'translators'];
+			var globalTopics = ['styles', 'translators', 'plugin-blocklist'];
 			var allTopics = topics.concat(globalTopics);
 			
 			sinon.stub(zoteroAPI, 'getKeyInfo')
@@ -574,12 +574,12 @@ describe("Streamer Tests:", function () {
 		});
 		
 		it("should add provided global subscriptions", function (done) {
-			expect(6);
+			expect(7);
 			
 			var ws = new WebSocket;
 			ws.on('message', function (data) {
 				onEvent(data, 'connected', Promise.coroutine(function*(fields) {
-					var topics = ['styles', 'translators'];
+					var topics = ['styles', 'translators', 'plugin-blocklist'];
 					
 					// Add a subscription
 					var response = yield ws.send({

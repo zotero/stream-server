@@ -21,7 +21,8 @@ var config = {
 	apiRequestHeaders: {},
 	globalTopics: [
 		'styles',
-		'translators'
+		'translators',
+		'plugin-blocklist'
 	],
 	// Minimum delay before clients should act on global topic notifications -- since these are triggered
 	// by webhooks or other queued notifications, they need time to be processed elsewhere
