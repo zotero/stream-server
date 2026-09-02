@@ -122,6 +122,12 @@ module.exports = function () {
 					emails: data.emails
 				});
 				break;
+
+			case 'loginCancelled':
+				this.sendEventForTopic(topic, event, {
+					topic: topic
+				});
+				break;
 			}
 		},
 		

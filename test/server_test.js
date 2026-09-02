@@ -1153,6 +1153,47 @@ describe("Streamer Tests:", function () {
 				}));
 			});
 		});
+		
+		it("should subscribe to a login session topic and receive loginCancelled", function (done) {
+			expect(5);
+
+			var ws = new WebSocket;
+			ws.on('message', function (data) {
+				onEvent(data, 'connected', Promise.coroutine(function* (fields) {
+					var topic = 'login-session:abc123';
+
+					var response = yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [
+							{
+								topics: [topic]
+							}
+						]
+					}, 'subscriptionsCreated');
+
+					assert.typeOf(response.subscriptions, 'array');
+					assert.lengthOf(response.subscriptions, 1);
+					assert.isUndefined(response.subscriptions[0].apiKey);
+					assert.sameMembers(response.subscriptions[0].topics, [topic]);
+
+					// Listen for loginCancelled notification
+					ws.on('message', function (data) {
+						onEvent(data, 'loginCancelled', function (fields) {
+							assert.equal(fields.topic, topic).done(function () {
+								ws.end();
+								done();
+							});
+						});
+					});
+
+					// Simulate loginCancelled notification from dataserver
+					redis.postMessages({
+						event: "loginCancelled",
+						topic: topic
+					});
+				}));
+			});
+		});
 
 		it('should reject a single-key connection when rate limit is exceeded', function (done) {
 			// rateLimitRequests is 3 in test config
