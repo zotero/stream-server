@@ -85,12 +85,14 @@ module.exports = function () {
 			case 'topicUpdated':
 				if (config.get('globalTopics').includes(topic)) {
 					let min = config.get('globalTopicsMinDelay');
-					let max = config.get('globalTopicsMinDelay') + config.get('globalTopicsDelayPeriod');
+					let max = min + config.get('globalTopicsDelayPeriod');
 
-					this.sendEventForTopic(topic, event, {
+					// Generate a separate random delay for each client, so that clients spread
+					// their requests across the delay period instead of all acting at once
+					this.sendEventForTopic(topic, event, () => ({
 						topic: topic,
 						delay: Math.floor(Math.random() * (max - min + 1)) + min
-					});
+					}));
 				} else {
 					debounceContinued(topic, continued, () => {
 						this.sendEventForTopic(topic, event, {
@@ -544,7 +546,8 @@ module.exports = function () {
 			
 			for (let i = 0; i < topicSubscriptions[topic].length; i++) {
 				let sub = topicSubscriptions[topic][i];
-				this.sendEvent(sub.connection, event, data);
+				// If a function is passed, call it to generate per-connection data
+				this.sendEvent(sub.connection, event, typeof data == 'function' ? data() : data);
 			}
 		},
 		

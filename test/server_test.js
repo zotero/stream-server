@@ -665,6 +665,53 @@ describe("Streamer Tests:", function () {
 			})
 		});
 		
+		it("should send a different delay to each client for global subscriptions", Promise.coroutine(function* () {
+			expect(3);
+			
+			var topic = 'styles';
+			var minDelay = config.get('globalTopicsMinDelay');
+			var period = config.get('globalTopicsDelayPeriod');
+			var clients = [];
+			var randomStub;
+			try {
+				for (let i = 0; i < 3; i++) {
+					let ws = new WebSocket;
+					yield new Promise(resolve => ws.on('open', resolve));
+					yield ws.send({
+						action: 'createSubscriptions',
+						subscriptions: [{ topics: [topic] }]
+					}, 'subscriptionsCreated');
+					clients.push(ws);
+				}
+				
+				var delayPromises = clients.map(ws => new Promise(function (resolve) {
+					ws.on('message', function (data) {
+						onEvent(data, 'topicUpdated', fields => resolve(fields.delay));
+					});
+				}));
+				
+				randomStub = sinon.stub(Math, 'random');
+				randomStub.onCall(0).returns(0.1);
+				randomStub.onCall(1).returns(0.5);
+				randomStub.onCall(2).returns(0.9);
+				redis.postMessages({
+					event: "topicUpdated",
+					topic: topic
+				});
+				randomStub.restore();
+				
+				var delays = yield Promise.all(delayPromises);
+				var expected = [0.1, 0.5, 0.9].map(r => Math.floor(r * (period + 1)) + minDelay);
+				assert.sameMembers(delays, expected);
+				assert.equal(new Set(delays).size, 3);
+				assert.isTrue(delays.every(d => d >= minDelay && d <= minDelay + period));
+			}
+			finally {
+				if (randomStub) randomStub.restore();
+				clients.forEach(ws => ws.end());
+			}
+		}));
+		
 		it("should ignore inaccessible subscriptions in add requests", function (done) {
 			expect(13);
 			
